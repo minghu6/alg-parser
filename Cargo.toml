@@ -1,0 +1,10 @@
+[package]
+name = "alg-parser"
+version = "0.1.0"
+authors = ["minghu6 <a19678zy@163.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cute = "^0.3.0"
