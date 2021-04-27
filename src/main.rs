@@ -1,5 +1,5 @@
-
 use alg_parser::*;
+use alg_parser::data::*;
 
 
 ///! Regex: int | [a-zA-z][a-zA-Z0-9]* | [0-9]*
