@@ -4,11 +4,14 @@
 #[macro_use(c)]
 extern crate cute;
 
+#[macro_use]
+extern crate maplit;
+
 pub mod utils;
 pub mod data;
 
 use std::cell::RefCell;
-use std::rc::{ Rc, Weak };
+use std::rc::{ Rc };
 
 use data::*;
 use utils::{ CounterType, gen_counter };
@@ -45,7 +48,7 @@ pub fn add_repetition(
     if node.repeat_times.1 > 1 {  // 构造一个循环， to_state 反指 from_state
         (*to_state).borrow_mut().add_transition(
             Transition::from_max_times(
-                node.repeat_times.1, Rc::downgrade(&from_state)
+                node.repeat_times.1, Rc::clone(&from_state)
             )
         )
     }
@@ -60,16 +63,16 @@ pub fn add_repetition(
         ));
 
         (*begin_state).borrow_mut().add_transition(
-            Transition::epsilon(Rc::downgrade(&to_state))
+            Transition::epsilon(Rc::clone(&to_state))
         );
 
         (*to_state).borrow_mut().add_transition(
-            Transition::epsilon(Rc::downgrade(&end_state))
+            Transition::epsilon(Rc::clone(&end_state))
         );
         (*to_state).borrow_mut().acceptable = false;
 
         (*begin_state).borrow_mut().add_transition(
-            Transition::epsilon(Rc::downgrade(&end_state))
+            Transition::epsilon(Rc::clone(&end_state))
         );
     } else {
         begin_state = from_state;
@@ -99,10 +102,10 @@ pub fn regex2nfa(counter: &mut CounterType, node: &GrammarNode)
                 // 新的开始状态通过 ε 连接到子图的开始状态
                 // 子图的结束状态通过 ε 连接到子图的结束状态
                 (*begin_state).borrow_mut().add_epsilon_transition(
-                    Rc::downgrade(&sub_begin_state)
+                    Rc::clone(&sub_begin_state)
                 );
                 (*sub_end_state).borrow_mut().add_epsilon_transition(
-                    Rc::downgrade(&end_state)
+                    Rc::clone(&end_state)
                 );
                 (*sub_end_state).borrow_mut().acceptable = false;
             }
@@ -142,7 +145,7 @@ pub fn regex2nfa(counter: &mut CounterType, node: &GrammarNode)
             ));
 
             (*begin_state).borrow_mut().add_transition(
-                Transition::from_grammar_node(node, Rc::downgrade(&end_state))
+                Transition::from_grammar_node(node, Rc::clone(&end_state))
             )
         }
 

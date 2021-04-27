@@ -1,8 +1,9 @@
 use std::fmt;
 use std::cell::RefCell;
-use std::rc::{ Rc, Weak };
+use std::rc::{ Rc };
+use std::collections::HashSet;
 
-use super::utils::{ CounterType, gen_counter };
+use super::utils::{ CounterType };
 
 ///! 因为只有一套实现，所以不需要定义接口
 
@@ -63,6 +64,10 @@ impl CharSet {
         }
 
         false
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.char_scopes.len() == 0
     }
 
     fn _test(&self) {
@@ -197,7 +202,7 @@ impl fmt::Display for GrammarNode {
 ////////////////////////////////////////////////////////////////////////////////
 /// State
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct State {
     pub id: usize,
     pub acceptable: bool,
@@ -237,10 +242,75 @@ impl State {
         self.transitions = state.transitions.clone();
     }
 
-    pub fn add_epsilon_transition(&mut self, state: Weak<RefCell<State>>) {
+    pub fn add_epsilon_transition(&mut self, state: Rc<RefCell<State>>) {
         self.add_transition(Transition::epsilon(state))
     }
 
+    fn dump(state: Rc<RefCell<State>>, f: &mut fmt::Formatter<'_>, visited_states: &mut HashSet<usize>) -> fmt::Result {
+        let this_state = (*state).borrow();
+        writeln!(f, "{}", this_state);  // 打印单状态
+
+        visited_states.insert(this_state.id);
+
+        for transition in this_state.transitions.iter() {
+            let to_state = (*transition.to_state).borrow();
+            if !visited_states.contains(&to_state.id) {
+                match State::dump(Rc::clone(&transition.to_state), f, visited_states) {
+                    Err(err) => {
+                        return Err(err);
+                    },
+                    _ => ()
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Show one state
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut show_str = String::from(format!("{}", self.id));
+
+        if self.transitions.len() > 0 {
+            for transition in self.transitions.iter() {
+                let to_state = &transition.to_state;
+
+                show_str.push_str(
+                    format!(
+                        "\t{} -> {}\n",
+                        format!("{}", transition),
+                        format!("{}", (*to_state).borrow().id)
+                    ).as_str()
+                );
+            }
+        } else {
+            show_str.push_str("\t(end)");
+            show_str.push_str("\n");
+        }
+
+        if self.acceptable {
+            show_str.push_str("\tacceptable\n");
+        }
+
+        write!(f, "{}", show_str.as_str())
+    }
+}
+
+/// Show full state
+impl fmt::Debug for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut visited_states = hashset!();
+
+        match State::dump(
+            Rc::new(RefCell::new(self.clone())),
+            f, &mut visited_states
+        ) {
+            Err(err) => { Err(err) },
+            Ok(()) => Ok(())
+        }
+    }
 }
 
 
@@ -251,11 +321,11 @@ impl State {
 pub struct Transition {
     pub chars: CharSet,
     pub max_times: usize,
-    pub to_state: Weak<RefCell<State>>
+    pub to_state: Rc<RefCell<State>>
 }
 
 impl Transition {
-    pub fn from_grammar_node(node: &GrammarNode, to_state: Weak<RefCell<State>>) -> Self {
+    pub fn from_grammar_node(node: &GrammarNode, to_state: Rc<RefCell<State>>) -> Self {
         Transition {
             chars: node.chars.clone(),
             max_times: 1,
@@ -263,7 +333,7 @@ impl Transition {
         }
     }
 
-    pub fn from_max_times(max_times: usize, to_state: Weak<RefCell<State>>) -> Self {
+    pub fn from_max_times(max_times: usize, to_state: Rc<RefCell<State>>) -> Self {
         Transition {
             chars: CharSet::new(),
             max_times,
@@ -271,7 +341,7 @@ impl Transition {
         }
     }
 
-    pub fn epsilon(to_state: Weak<RefCell<State>>) -> Self {
+    pub fn epsilon(to_state: Rc<RefCell<State>>) -> Self {
         Transition {
             chars: CharSet::new(),
             max_times: 0,
@@ -283,6 +353,19 @@ impl Transition {
         self.chars.contains(inputc)
     }
 
+    pub fn is_epsilon(&self) -> bool {
+        self.chars.is_empty()
+    }
+}
+
+impl fmt::Display for Transition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_epsilon() {
+            write!(f, "{}", "ε")
+        } else {
+            write!(f, "{}", self.chars)
+        }
+    }
 }
 
 mod test {

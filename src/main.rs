@@ -43,5 +43,6 @@ fn main() {
 
     let (begin_state, end_state) = regex2nfa(&mut global_counter, &grammar_sample1);
 
-    println!("{:?}", begin_state);
+    println!("{:?}", (*begin_state).borrow());
+    //println!("{}", (*begin_state).borrow());
 }
