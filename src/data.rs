@@ -41,7 +41,7 @@ macro_rules! charset {
 // }
 
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CharSet {
     pub char_scopes: Vec::<(char, char)>
 }
@@ -91,7 +91,7 @@ impl fmt::Display for CharSet {
 ////////////////////////////////////////////////////////////////////////////////
 /// GrammarNode: Simple Regex Node
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum GrammarNodeType {
     And,
     Or,
@@ -100,7 +100,7 @@ pub enum GrammarNodeType {
     Epsilon  // 空集
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct GrammarNode {
     pub childen: Vec<Box<GrammarNode>>,
     pub nodetype: GrammarNodeType,
@@ -197,7 +197,7 @@ impl fmt::Display for GrammarNode {
 ////////////////////////////////////////////////////////////////////////////////
 /// State
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct State {
     pub id: usize,
     pub acceptable: bool,
@@ -247,7 +247,7 @@ impl State {
 ////////////////////////////////////////////////////////////////////////////////
 /////// Transition
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Transition {
     pub chars: CharSet,
     pub max_times: usize,

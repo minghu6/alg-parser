@@ -1,5 +1,6 @@
 use alg_parser::*;
 use alg_parser::data::*;
+use alg_parser::utils::*;
 
 
 ///! Regex: int | [a-zA-z][a-zA-Z0-9]* | [0-9]*
@@ -37,4 +38,10 @@ fn gen_sample_grammar_1() -> GrammarNode {
 fn main() {
     let grammar_sample1 = gen_sample_grammar_1();
     println!("{}", grammar_sample1);
+
+    let mut global_counter = gen_counter();
+
+    let (begin_state, end_state) = regex2nfa(&mut global_counter, &grammar_sample1);
+
+    println!("{:?}", begin_state);
 }
