@@ -97,6 +97,8 @@ pub trait GraphWalker: Eq + Hash {
     }
 }
 
+
+
 mod test {
     #[test]
     fn test_counter() {

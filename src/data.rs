@@ -1,8 +1,10 @@
-use std::cell::RefCell;
+use std::{borrow::Borrow, cell::RefCell};
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+
+use key_hash_set::{ KeySet };
 
 use super::utils::{CounterType, GraphWalker};
 
@@ -207,7 +209,7 @@ impl fmt::Display for GrammarNode {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// State
+/// State： (AKA NFA State)
 
 #[derive(Clone)]
 pub struct State {
@@ -342,7 +344,7 @@ impl fmt::Debug for State {
     }
 }
 
-/// Graph Walker
+/// Graph Walker for State
 impl GraphWalker for State {
     fn get_id(&self) -> u128 {
         self.id as u128
@@ -415,6 +417,36 @@ impl fmt::Display for Transition {
         }
     }
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+/////// DFA State: 建立在普通的State(NFA State)的集合的基础之上
+pub struct DFAState {
+    pub id: usize,
+    pub states: Rc<RefCell<KeySet<Rc<RefCell<State>>>>>
+}
+
+impl DFAState {
+    pub fn new_key_set() -> Rc<RefCell<KeySet<Rc<RefCell<State>>>>> {
+        Rc::new(RefCell::new(
+            KeySet::new(|x| format!("{}", (**x).borrow().id))
+        ))
+    }
+
+    pub fn with_counter_states(counter: &mut CounterType, states: Rc<RefCell<KeySet<Rc<RefCell<State>>>>>) -> Self {
+        DFAState {
+            id: counter(),
+            states
+        }
+    }
+
+    pub fn is_acceptable(&self) -> bool {
+        (*self.states).borrow().iter().any(|state| (*(*state)).borrow().acceptable)
+    }
+}
+
+
+
 
 mod test {
     #[test]

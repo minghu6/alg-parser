@@ -13,6 +13,9 @@ pub mod utils;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashMap;
+
+use key_hash_set::{ KeySet };
 
 use data::*;
 use utils::{yes, CounterType, GraphWalker};
@@ -35,7 +38,10 @@ pub fn concat_state(
     (*from_end_state).borrow_mut().acceptable = false;
 }
 
-pub fn add_repetition(
+
+/// Regex to NFA
+
+fn add_repetition(
     from_state: Rc<RefCell<State>>,
     to_state: Rc<RefCell<State>>,
     node: &GrammarNode,
@@ -86,7 +92,7 @@ pub fn regex2nfa(
 
     match node.nodetype {
         GrammarNodeType::Or => {
-            // 新的开始和结束状态
+            // 构建新的开始和结束状态，用它们连每一个转移状态
             begin_state = Rc::new(RefCell::new(State::with_counter(counter)));
             end_state = Rc::new(RefCell::new(State::with_counter_accept(counter)));
 
@@ -94,7 +100,7 @@ pub fn regex2nfa(
                 let (sub_begin_state, sub_end_state) = regex2nfa(counter, child);
 
                 // 新的开始状态通过 ε 连接到子图的开始状态
-                // 子图的结束状态通过 ε 连接到子图的结束状态
+                // 子图的结束状态通过 ε 连接到新的结束状态
                 (*begin_state)
                     .borrow_mut()
                     .add_epsilon_transition(Rc::clone(&sub_begin_state));
@@ -105,7 +111,7 @@ pub fn regex2nfa(
             }
         }
 
-        GrammarNodeType::And => {
+        GrammarNodeType::And => {  // 各个转移状态前后相连
             let sub_graphs: Vec<(Rc<RefCell<State>>, Rc<RefCell<State>>)> = node
                 .childen
                 .iter()
@@ -124,7 +130,7 @@ pub fn regex2nfa(
             }
         }
 
-        GrammarNodeType::LexNode => {
+        GrammarNodeType::LexNode => {  // 根据node的condition创建两个状态
             begin_state = Rc::new(RefCell::new(State::with_counter(counter)));
             end_state = Rc::new(RefCell::new(State::with_counter_accept(counter)));
 
@@ -142,6 +148,57 @@ pub fn regex2nfa(
     }
 
     (begin_state, end_state)
+}
+
+
+/// NFA to DFA
+
+pub fn nfa2dfa(
+    counter: &mut CounterType,
+    begin_state: Rc<RefCell<State>>,
+    alphabet: &CharSet
+) -> Vec<Rc<RefCell<DFAState>>> {
+
+    let mut dfa_states = Vec::<Rc<RefCell<DFAState>>>::new();
+    let mut closure_cache = HashMap::new();
+
+    calc_epsilon_closure(Rc::clone(&begin_state), &mut closure_cache);
+
+    let begin_state_ref = (*begin_state).borrow();
+    let mut cur_dfa_state
+        = DFAState::with_counter_states(
+            counter, Rc::clone(closure_cache.get(&begin_state_ref.id).unwrap())
+        );
+
+    dfa_states
+}
+
+
+pub fn calc_epsilon_closure(
+    state: Rc<RefCell<State>>,
+    cache: &mut HashMap<usize, Rc<RefCell<KeySet<Rc<RefCell<State>>>>>>)
+{
+    let state_ref = (*state).borrow();
+    if let Some(_) = cache.get(&state_ref.id) {
+        return;
+    }
+
+    let closure = DFAState::new_key_set();
+    let mut clousure_ref = (*closure).borrow_mut();
+    clousure_ref.insert(Rc::clone(&state));  // 包含自身
+
+    for transition in state_ref.transitions.iter() {
+        if transition.is_epsilon() {
+            let next_state = Rc::clone(&transition.to_state);
+            let next_state_id = (*next_state).borrow().id;
+            //closure.insert(Rc::clone(&next_state));
+            calc_epsilon_closure(next_state, cache);
+            let other = (*cache.get(&next_state_id).unwrap()).borrow();
+            clousure_ref.union(&other);
+        }
+    }
+
+    cache.insert(state_ref.id, Rc::clone(&closure));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -166,7 +223,7 @@ fn _match_with_nfa(state: &State, chars_input: &[char], init_index: usize) -> us
 
     for transition in state.transitions.iter() {
         let next_state = (*transition.to_state).borrow();
-        if transition.is_epsilon() {
+        if transition.is_epsilon() {  // 自动跳过epsilon转移，到达下一个状态
             // epsilon 自动转换状态
             next_index = _match_with_nfa(&next_state, chars_input, init_index);
 

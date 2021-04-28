@@ -7,6 +7,7 @@ name = "alg-parser"
 version = "0.1.0"
 dependencies = [
  "cute",
+ "key-hash-set",
  "maplit",
 ]
 
@@ -15,6 +16,11 @@ name = "cute"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "45e700c2d1c3feea9b695e79b2dfeeb93040556a58c556fae23f71b1e6b449fd"
+
+[[package]]
+name = "key-hash-set"
+version = "0.1.0"
+source = "git+https://github.com/minghu6/rust-key-set?branch=master#2710e77236565f9238be3143bd99af9b3d45b68d"
 
 [[package]]
 name = "maplit"
