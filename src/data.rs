@@ -1,12 +1,12 @@
-use std::fmt;
 use std::cell::RefCell;
-use std::rc::{ Rc };
 use std::collections::HashSet;
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
-use super::utils::{ CounterType };
+use super::utils::{CounterType, GraphWalker};
 
 ///! 因为只有一套实现，所以不需要定义接口
-
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Charset
@@ -41,26 +41,27 @@ macro_rules! charset {
 //     end_char: char
 // }
 
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CharSet {
-    pub char_scopes: Vec::<(char, char)>
+    pub char_scopes: Vec<(char, char)>,
 }
 
 impl CharSet {
     pub fn new() -> Self {
         CharSet {
-            char_scopes: Vec::new()
+            char_scopes: Vec::new(),
         }
     }
 
     pub fn add(&mut self, char_scope: (char, char)) {
-        self.char_scopes.push(char_scope)  // return ()
+        self.char_scopes.push(char_scope) // return ()
     }
 
     pub fn contains(&self, inputc: &char) -> bool {
         for (lower, upper) in self.char_scopes.iter() {
-            if lower <= inputc && inputc <= upper { return true; }
+            if lower <= inputc && inputc <= upper {
+                return true;
+            }
         }
 
         false
@@ -81,13 +82,18 @@ impl CharSet {
 
 impl fmt::Display for CharSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let res = self.char_scopes.iter()
-        .map(|(lower, upper)| {
-            if lower == upper { format!("{}", lower) }
-            else { format!("{}-{}", lower, upper) }
-        })
-        .collect::<Vec<String>>()
-        .join("");
+        let res = self
+            .char_scopes
+            .iter()
+            .map(|(lower, upper)| {
+                if lower == upper {
+                    format!("{}", lower)
+                } else {
+                    format!("{}-{}", lower, upper)
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("");
 
         write!(f, "{}", res)
     }
@@ -96,21 +102,21 @@ impl fmt::Display for CharSet {
 ////////////////////////////////////////////////////////////////////////////////
 /// GrammarNode: Simple Regex Node
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum GrammarNodeType {
     And,
     Or,
     LexNode,    // 词法规则的字符
-    SyntaxNode,   // 语法规则的字符
-    Epsilon  // 空集
+    SyntaxNode, // 语法规则的字符
+    Epsilon,    // 空集
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct GrammarNode {
     pub childen: Vec<Box<GrammarNode>>,
     pub nodetype: GrammarNodeType,
     pub repeat_times: (usize, usize),
-    pub chars: CharSet
+    pub chars: CharSet,
 }
 
 impl GrammarNode {
@@ -122,7 +128,7 @@ impl GrammarNode {
             childen: Vec::new(),
             nodetype: GrammarNodeType::Epsilon,
             repeat_times: (1, 1),
-            chars: CharSet::new()
+            chars: CharSet::new(),
         }
     }
 
@@ -134,12 +140,11 @@ impl GrammarNode {
         node
     }
 
-    pub fn from_charset_repeat_times
-        (chars: CharSet, repeat_times: (usize, usize)) -> Self {
-            let mut node = GrammarNode::from_charset(chars);
-            node.repeat_times = repeat_times;
+    pub fn from_charset_repeat_times(chars: CharSet, repeat_times: (usize, usize)) -> Self {
+        let mut node = GrammarNode::from_charset(chars);
+        node.repeat_times = repeat_times;
 
-            node
+        node
     }
 
     pub fn create_or_node() -> Self {
@@ -170,22 +175,24 @@ impl GrammarNode {
         let mut text = String::new();
         if self.childen.len() == 0 {
             text.push_str(format!("[{}]", self.chars).as_str());
-            text.push_str(
-                match self.repeat_times {
-                    (1, usize::MAX) => "+",
-                    (0, usize::MAX) => "*",
-                    _ => ""
-                }
-            );
+            text.push_str(match self.repeat_times {
+                (1, usize::MAX) => "+",
+                (0, usize::MAX) => "*",
+                _ => "",
+            });
         } else {
-            let delim = if self.nodetype == GrammarNodeType::And { "" } else { " | " };
+            let delim = if self.nodetype == GrammarNodeType::And {
+                ""
+            } else {
+                " | "
+            };
 
             text.push_str(
-                c![(*child).in_short_text(), for child in self.childen.iter()].join(delim)
-                .as_str()
+                c![(*child).in_short_text(), for child in self.childen.iter()]
+                    .join(delim)
+                    .as_str(),
             );
         }
-
 
         text
     }
@@ -207,7 +214,7 @@ pub struct State {
     pub id: usize,
     pub acceptable: bool,
     pub transitions: Vec<Transition>,
-    pub grammar_node: GrammarNode
+    pub grammar_node: GrammarNode,
 }
 
 impl State {
@@ -219,7 +226,7 @@ impl State {
             id: counter(),
             acceptable: false,
             transitions: Vec::new(),
-            grammar_node: GrammarNode::new()
+            grammar_node: GrammarNode::new(),
         }
     }
 
@@ -246,20 +253,28 @@ impl State {
         self.add_transition(Transition::epsilon(state))
     }
 
-    fn dump(state: Rc<RefCell<State>>, f: &mut fmt::Formatter<'_>, visited_states: &mut HashSet<usize>) -> fmt::Result {
-        let this_state = (*state).borrow();
-        writeln!(f, "{}", this_state);  // 打印单状态
+    fn dump(
+        state: &State,
+        f: &mut fmt::Formatter<'_>,
+        visited_states: &mut HashSet<usize>,
+    ) -> fmt::Result {
+        let this_state = state;
+        match writeln!(f, "{}", this_state) {
+            // 打印单状态
+            Err(err) => return Err(err),
+            _ => (),
+        }
 
         visited_states.insert(this_state.id);
 
         for transition in this_state.transitions.iter() {
             let to_state = (*transition.to_state).borrow();
             if !visited_states.contains(&to_state.id) {
-                match State::dump(Rc::clone(&transition.to_state), f, visited_states) {
+                match State::dump(&to_state, f, visited_states) {
                     Err(err) => {
                         return Err(err);
-                    },
-                    _ => ()
+                    }
+                    _ => (),
                 }
             }
         }
@@ -267,6 +282,21 @@ impl State {
         Ok(())
     }
 }
+
+/// Hash
+impl Hash for State {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.id)
+    }
+}
+
+impl PartialEq<State> for State {
+    fn eq(&self, other: &State) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for State {}
 
 /// Show one state
 impl fmt::Display for State {
@@ -276,13 +306,15 @@ impl fmt::Display for State {
         if self.transitions.len() > 0 {
             for transition in self.transitions.iter() {
                 let to_state = &transition.to_state;
+                let to_state_id = (*(*to_state)).borrow().id;
 
                 show_str.push_str(
                     format!(
                         "\t{} -> {}\n",
                         format!("{}", transition),
-                        format!("{}", (*to_state).borrow().id)
-                    ).as_str()
+                        format!("{}", to_state_id)
+                    )
+                    .as_str(),
                 );
             }
         } else {
@@ -303,16 +335,32 @@ impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut visited_states = hashset!();
 
-        match State::dump(
-            Rc::new(RefCell::new(self.clone())),
-            f, &mut visited_states
-        ) {
-            Err(err) => { Err(err) },
-            Ok(()) => Ok(())
+        match State::dump(self, f, &mut visited_states) {
+            Err(err) => Err(err),
+            Ok(()) => Ok(()),
         }
     }
 }
 
+/// Graph Walker
+impl GraphWalker for State {
+    fn get_id(&self) -> u128 {
+        self.id as u128
+    }
+
+    fn get_childern(&self) -> Box<dyn Iterator<Item = Rc<RefCell<Self>>>> {
+        let childern_vec: Vec<Rc<RefCell<Self>>> = self
+            .transitions
+            .iter()
+            .map(|trans| {
+                let state = Rc::clone(&(*trans).to_state);
+                state
+            })
+            .collect();
+
+        Box::new(childern_vec.into_iter())
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Transition
@@ -321,7 +369,7 @@ impl fmt::Debug for State {
 pub struct Transition {
     pub chars: CharSet,
     pub max_times: usize,
-    pub to_state: Rc<RefCell<State>>
+    pub to_state: Rc<RefCell<State>>,
 }
 
 impl Transition {
@@ -329,7 +377,7 @@ impl Transition {
         Transition {
             chars: node.chars.clone(),
             max_times: 1,
-            to_state: to_state
+            to_state: to_state,
         }
     }
 
@@ -337,7 +385,7 @@ impl Transition {
         Transition {
             chars: CharSet::new(),
             max_times,
-            to_state: to_state
+            to_state: to_state,
         }
     }
 
@@ -345,7 +393,7 @@ impl Transition {
         Transition {
             chars: CharSet::new(),
             max_times: 0,
-            to_state: to_state
+            to_state: to_state,
         }
     }
 
@@ -381,14 +429,15 @@ mod test {
         assert!(mycharset.contains(&'b'));
         assert!(!mycharset.contains(&'3'));
         assert!(mycharset.contains(&'2'));
-
     }
 
     #[test]
     fn test_macro_charset() {
         use super::CharSet;
 
-        assert_eq!(format!("{}", charset!{ a-a | 0-9 | a-z | 你-好}), "a0-9a-z你-好");
+        assert_eq!(
+            format!("{}", charset! { a-a | 0-9 | a-z | 你-好}),
+            "a0-9a-z你-好"
+        );
     }
-
 }
