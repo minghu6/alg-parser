@@ -1,12 +1,18 @@
-use std::{borrow::Borrow, cell::RefCell};
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::slice::Iter;
+use std::{
+    cell::RefCell,
+    collections::btree_map::Range,
+    iter::{Chain, IntoIterator},
+    vec::IntoIter,
+};
 
-use key_hash_set::{ KeySet };
+use key_set::{ KeySet, KeyHashSet };
 
-use super::utils::{CounterType, GraphWalker};
+use super::utils::{char_range, CounterType, GraphWalker};
 
 ///! 因为只有一套实现，所以不需要定义接口
 
@@ -20,7 +26,7 @@ macro_rules! charset {
 
     ( $($lower:tt-$upper:tt)|* ) => {
         {
-            let mut _charset = CharSet::new();
+            let mut _charset = $crate::data::CharSet::new();
 
             $(
                 let lowers = stringify!($lower);
@@ -73,6 +79,19 @@ impl CharSet {
         self.char_scopes.len() == 0
     }
 
+    pub fn to_vec(&self) -> Vec<char> {
+        self.char_scopes
+            .clone()
+            .into_iter()
+            .map(|(lower, upper)| char_range(lower, upper))
+            .flatten()
+            .collect::<Vec<char>>()
+    }
+
+    pub fn iter(&self) -> IntoIter<char> {
+        self.to_vec().into_iter()
+    }
+
     fn _test(&self) {
         // 用来看一下宏展开
         //charset!(a b);
@@ -98,6 +117,20 @@ impl fmt::Display for CharSet {
             .join("");
 
         write!(f, "{}", res)
+    }
+}
+
+impl IntoIterator for CharSet {
+    type Item = char;
+    type IntoIter = IntoIter<char>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.char_scopes
+            .into_iter()
+            .map(|(lower, upper)| char_range(lower, upper))
+            .flatten()
+            .collect::<Vec<char>>()
+            .into_iter()
     }
 }
 
@@ -418,35 +451,57 @@ impl fmt::Display for Transition {
     }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFA State: 建立在普通的State(NFA State)的集合的基础之上
+
+pub type StatesSet = KeyHashSet<Rc<RefCell<State>>, usize>;
+
 pub struct DFAState {
     pub id: usize,
-    pub states: Rc<RefCell<KeySet<Rc<RefCell<State>>>>>
+    pub states: Rc<RefCell<StatesSet>>,
 }
 
 impl DFAState {
-    pub fn new_key_set() -> Rc<RefCell<KeySet<Rc<RefCell<State>>>>> {
-        Rc::new(RefCell::new(
-            KeySet::new(|x| format!("{}", (**x).borrow().id))
-        ))
+    pub fn dfa_states_get_key(x: &Rc<RefCell<DFAState>>) -> usize {
+        (*x).borrow().id
     }
 
-    pub fn with_counter_states(counter: &mut CounterType, states: Rc<RefCell<KeySet<Rc<RefCell<State>>>>>) -> Self {
+    pub fn states_set_getkey(x: &Rc<RefCell<State>>) -> usize {
+        (*x).borrow().id
+    }
+
+    pub fn new_key_set() -> Rc<RefCell<StatesSet>> {
+        Rc::new(RefCell::new(KeyHashSet::new(DFAState::states_set_getkey)))
+    }
+
+    pub fn with_counter_states(
+        counter: &mut CounterType,
+        states: Rc<RefCell<StatesSet>>,
+    ) -> Self {
         DFAState {
             id: counter(),
-            states
+            states,
         }
     }
 
     pub fn is_acceptable(&self) -> bool {
-        (*self.states).borrow().iter().any(|state| (*(*state)).borrow().acceptable)
+        (*self.states)
+            .borrow()
+            .iter()
+            .any(|state| (*(*state)).borrow().acceptable)
     }
 }
 
+/// DFAState 比较相等根据它所包含的State
+/// 而State 比较相等根据它的id
+impl PartialEq for DFAState {
+    fn eq(&self, other: &DFAState) -> bool {
+        let state_keyset = (*self.states).borrow();
+        let other_keyset = (*other.states).borrow();
 
-
+        *state_keyset == *other_keyset
+    }
+}
 
 mod test {
     #[test]
@@ -465,11 +520,17 @@ mod test {
 
     #[test]
     fn test_macro_charset() {
-        use super::CharSet;
-
         assert_eq!(
             format!("{}", charset! { a-a | 0-9 | a-z | 你-好}),
             "a0-9a-z你-好"
+        );
+    }
+
+    #[test]
+    fn test_charset_intoiter() {
+        assert_eq!(
+            charset![a - a | 0 - 3].into_iter().collect::<Vec<char>>(),
+            vec!['a', '0', '1', '2', '3']
         );
     }
 }

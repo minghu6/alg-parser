@@ -11,11 +11,11 @@ extern crate maplit;
 pub mod data;
 pub mod utils;
 
-use std::cell::RefCell;
+use std::{borrow::Borrow, cell::RefCell, usize};
 use std::rc::Rc;
 use std::collections::HashMap;
 
-use key_hash_set::{ KeySet };
+use key_set::{GetKeyType, KeyHashSet, KeySet};
 
 use data::*;
 use utils::{yes, CounterType, GraphWalker};
@@ -34,7 +34,7 @@ pub fn concat_state(
 
     (*from_end_state)
         .borrow_mut()
-        .copy_transitions(&(*to_begin_state).borrow());
+        .copy_transitions(&(**to_begin_state).borrow());
     (*from_end_state).borrow_mut().acceptable = false;
 }
 
@@ -157,26 +157,55 @@ pub fn nfa2dfa(
     counter: &mut CounterType,
     begin_state: Rc<RefCell<State>>,
     alphabet: &CharSet
-) -> Vec<Rc<RefCell<DFAState>>> {
+) -> KeyHashSet<Rc<RefCell<DFAState>>, usize> {
 
-    let mut dfa_states = Vec::<Rc<RefCell<DFAState>>>::new();
+    let mut states_set_vec: Vec<Rc<RefCell<StatesSet>>>
+        = vec![];
+
     let mut closure_cache = HashMap::new();
 
     calc_epsilon_closure(Rc::clone(&begin_state), &mut closure_cache);
 
     let begin_state_ref = (*begin_state).borrow();
     let mut cur_dfa_state
-        = DFAState::with_counter_states(
-            counter, Rc::clone(closure_cache.get(&begin_state_ref.id).unwrap())
-        );
+        =
+        Rc::new(RefCell::new(
+            DFAState::with_counter_states(
+                counter,
+                Rc::clone(closure_cache.get(&begin_state_ref.id).unwrap()
+            )
+        )));
 
-    dfa_states
+    states_set_vec.push(Rc::clone(&(*cur_dfa_state).borrow().states));
+
+    // new_states 每次计算出的新的stateset
+    let mut new_states = Vec::<Rc<RefCell<DFAState>>>::new();
+    new_states.push(Rc::clone(&cur_dfa_state));
+
+    while new_states.len() > 0 {
+        let wait_for_calc = new_states;
+        new_states = vec![];
+
+        for taken_state in wait_for_calc.iter() {
+            for c in alphabet.iter() {
+
+            }
+        }
+    }
+
+    KeyHashSet::from_intoiter(
+        DFAState::dfa_states_get_key,
+    states_set_vec
+        .into_iter()
+        .map(|x| Rc::new(RefCell::new(DFAState::with_counter_states(counter, x))))
+        .collect::<Vec<Rc<RefCell<DFAState>>>>()
+    )
+
 }
-
 
 pub fn calc_epsilon_closure(
     state: Rc<RefCell<State>>,
-    cache: &mut HashMap<usize, Rc<RefCell<KeySet<Rc<RefCell<State>>>>>>)
+    cache: &mut HashMap<usize, Rc<RefCell<KeyHashSet<Rc<RefCell<State>>, usize>>>>)
 {
     let state_ref = (*state).borrow();
     if let Some(_) = cache.get(&state_ref.id) {
@@ -193,12 +222,41 @@ pub fn calc_epsilon_closure(
             let next_state_id = (*next_state).borrow().id;
             //closure.insert(Rc::clone(&next_state));
             calc_epsilon_closure(next_state, cache);
-            let other = (*cache.get(&next_state_id).unwrap()).borrow();
+            let other = (**cache.get(&next_state_id).unwrap()).borrow();
             clousure_ref.union(&other);
         }
     }
 
     cache.insert(state_ref.id, Rc::clone(&closure));
+}
+
+
+
+fn calc_move(
+    s0: Rc<RefCell<DFAState>>,
+    c: &char,
+    states_set_vec: &mut Vec<Rc<RefCell<StatesSet>>>) {
+
+    let s0_ref = (*s0).borrow();
+    let s0_states_ref = (*s0_ref.states).borrow();
+
+    let calc_res_iter = s0_states_ref
+        .iter()
+        .filter(
+            |&x| (**x).borrow().transitions
+                .iter()
+                .any(|trans| trans.is_match(c)))
+        .map(|x| Rc::clone(x));
+
+    let calc_res: Rc<RefCell<StatesSet>>
+        = Rc::new(RefCell::new(
+            KeySet::from_intoiter(DFAState::states_set_getkey, calc_res_iter)
+        ));
+
+    match states_set_vec.iter().find(|&states_set| *(**states_set).borrow() == *(*calc_res).borrow()) {
+        None => { states_set_vec.push(calc_res); }
+        _ => ()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -259,7 +317,7 @@ fn reach_acceptable_state(state: &State) -> bool {
     state
         .dfs_walk(&yes)
         .iter()
-        .any(|state| (*state).borrow().acceptable)
+        .any(|state| (**state).borrow().acceptable)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -7,9 +7,15 @@ name = "alg-parser"
 version = "0.1.0"
 dependencies = [
  "cute",
- "key-hash-set",
+ "key-set",
  "maplit",
 ]
+
+[[package]]
+name = "autocfg"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "cute"
@@ -18,9 +24,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "45e700c2d1c3feea9b695e79b2dfeeb93040556a58c556fae23f71b1e6b449fd"
 
 [[package]]
-name = "key-hash-set"
+name = "hashbrown"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
+
+[[package]]
+name = "indexmap"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "824845a0bf897a9042383849b02c1bc219c2383772efcd5c6f9766fa4b81aef3"
+dependencies = [
+ "autocfg",
+ "hashbrown",
+]
+
+[[package]]
+name = "key-set"
 version = "0.1.0"
-source = "git+https://github.com/minghu6/rust-key-set?branch=master#2710e77236565f9238be3143bd99af9b3d45b68d"
+dependencies = [
+ "indexmap",
+]
 
 [[package]]
 name = "maplit"
