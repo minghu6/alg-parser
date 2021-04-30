@@ -399,12 +399,15 @@ impl GraphWalker for State {
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Transition
+pub trait BaseState {
+
+}
 
 #[derive(Debug, Clone)]
 pub struct Transition {
     pub chars: CharSet,
     pub max_times: usize,
-    pub to_state: Rc<RefCell<State>>,
+    pub to_state: Rc<RefCell<dyn BaseState>>,
 }
 
 impl Transition {
@@ -459,6 +462,7 @@ pub type StatesSet = KeyHashSet<Rc<RefCell<State>>, usize>;
 pub struct DFAState {
     pub id: usize,
     pub states: Rc<RefCell<StatesSet>>,
+    pub transitions: Vec<Transition>,
 }
 
 impl DFAState {
@@ -481,6 +485,7 @@ impl DFAState {
         DFAState {
             id: counter(),
             states,
+            transitions: vec![]
         }
     }
 
@@ -489,6 +494,10 @@ impl DFAState {
             .borrow()
             .iter()
             .any(|state| (*(*state)).borrow().acceptable)
+    }
+
+    pub fn add_transition(&mut self, transition: Transition) {
+        self.transitions.push(transition)
     }
 }
 

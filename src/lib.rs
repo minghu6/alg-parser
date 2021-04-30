@@ -159,43 +159,80 @@ pub fn nfa2dfa(
     alphabet: &CharSet
 ) -> KeyHashSet<Rc<RefCell<DFAState>>, usize> {
 
-    let mut states_set_vec: Vec<Rc<RefCell<StatesSet>>>
-        = vec![];
 
-    let mut closure_cache = HashMap::new();
+    let mut dfa_states_vec: Vec<Rc<RefCell<DFAState>>> = vec![];
+    let mut dfa_states_set: KeyHashSet<Rc<RefCell<DFAState>>, usize> = KeyHashSet::new(
+        DFAState::dfa_states_get_key
+    );
 
-    calc_epsilon_closure(Rc::clone(&begin_state), &mut closure_cache);
+    let mut state_closure_cache = HashMap::new();
+
+    calc_state_epsilon_states_set(Rc::clone(&begin_state), &mut state_closure_cache);
 
     let begin_state_ref = (*begin_state).borrow();
-    let mut cur_dfa_state
-        =
-        Rc::new(RefCell::new(
-            DFAState::with_counter_states(
-                counter,
-                Rc::clone(closure_cache.get(&begin_state_ref.id).unwrap()
-            )
-        )));
+    let mut cur_states_set= state_closure_cache.get(&begin_state_ref.id).unwrap();
 
-    states_set_vec.push(Rc::clone(&(*cur_dfa_state).borrow().states));
+    let cur_dfa_state = Rc::new(RefCell::new(
+        DFAState::with_counter_states(counter, cur_states_set)
+    ));
+    dfa_states_set.insert(
+        Rc::clone(&cur_dfa_state)
+    );
+
 
     // new_states 每次计算出的新的stateset
-    let mut new_states = Vec::<Rc<RefCell<DFAState>>>::new();
-    new_states.push(Rc::clone(&cur_dfa_state));
+    let mut new_dfa_state_vec = Vec::<Rc<RefCell<DFAState>>>::new();
+    new_dfa_state_vec.push(Rc::clone(cur_states_set));
 
-    while new_states.len() > 0 {
-        let wait_for_calc = new_states;
-        new_states = vec![];
+    while new_dfa_state_vec.len() > 0 {
+        let wait_for_calc = new_dfa_state_vec;
+        new_dfa_state_vec = vec![];
 
-        for taken_state in wait_for_calc.iter() {
+        for taken_state in wait_for_calc.into_ter() {
             for c in alphabet.iter() {
+                let taken_states_set = (*taken_state).borrow().states;
+                let next_states_set = r#move(Rc::clone(&taken_states_set), &c);
 
+                if (*next_states_set).borrow().is_empty() { continue }  // 在一个有一定规模的字符集里大部分都是这样的情况
+
+                let mut next_dfa_state;
+                match find_dfa_state_by_states_set(&new_dfa_state_vec, next_states_set) {
+                    Some(old_dfa_state) => {
+                        next_dfa_state = old_dfa_state;
+                    }
+
+                    None => {
+                        let new_dfa_state
+                            = Rc::new(RefCell::new(DFAState::with_counter_states(
+                            counter,
+                            Rc::clone(&next_dfa_state)
+                        )));
+
+                        dfa_states_set.insert(Rc::clone(&new_dfa_state));
+                        new_dfa_state_vec.push(Rc::clone(&new_dfa_state));
+
+                    }
+                }
+
+                {
+
+                    new_dfa_state_vec.push(new_states_set);
+                }
+
+                (*next_states_set).borrow_mut().extend(
+                    states_set_epsilon_closure(Rc::clone(&next_states_set), &mut state_closure_cache)
+                );
             }
         }
     }
 
+    let mut states_set_vec_cache: Vec<Rc<RefCell<StatesSet>>>
+    = vec![];
+    states_set_vec_cache.push(Rc::clone(cur_states_set));
+
     KeyHashSet::from_intoiter(
         DFAState::dfa_states_get_key,
-    states_set_vec
+    states_set_vec_cache
         .into_iter()
         .map(|x| Rc::new(RefCell::new(DFAState::with_counter_states(counter, x))))
         .collect::<Vec<Rc<RefCell<DFAState>>>>()
@@ -203,9 +240,10 @@ pub fn nfa2dfa(
 
 }
 
-pub fn calc_epsilon_closure(
+/// 计算一个State通过epsilon转换所能到达的状态集合，目的是把这个计算的集合加入到缓存集中。
+pub fn calc_state_epsilon_states_set(
     state: Rc<RefCell<State>>,
-    cache: &mut HashMap<usize, Rc<RefCell<KeyHashSet<Rc<RefCell<State>>, usize>>>>)
+    cache: &mut HashMap<usize, Rc<RefCell<StatesSet>>>)
 {
     let state_ref = (*state).borrow();
     if let Some(_) = cache.get(&state_ref.id) {
@@ -221,7 +259,7 @@ pub fn calc_epsilon_closure(
             let next_state = Rc::clone(&transition.to_state);
             let next_state_id = (*next_state).borrow().id;
             //closure.insert(Rc::clone(&next_state));
-            calc_epsilon_closure(next_state, cache);
+            calc_state_epsilon_states_set(next_state, cache);
             let other = (**cache.get(&next_state_id).unwrap()).borrow();
             clousure_ref.union(&other);
         }
@@ -230,17 +268,48 @@ pub fn calc_epsilon_closure(
     cache.insert(state_ref.id, Rc::clone(&closure));
 }
 
+/// 得到一个状态集合的闭包
+pub fn states_set_epsilon_closure(
+    states_set: Rc<RefCell<StatesSet>>,
+    cache: &mut HashMap<usize, Rc<RefCell<StatesSet>>>
+) -> Rc<RefCell<StatesSet>>
 
+{
+    let states_set_ref = (*states_set).borrow();
 
-fn calc_move(
-    s0: Rc<RefCell<DFAState>>,
-    c: &char,
-    states_set_vec: &mut Vec<Rc<RefCell<StatesSet>>>) {
+    for state in states_set_ref.iter() {
+        calc_state_epsilon_states_set(*state, cache)
+    }
 
-    let s0_ref = (*s0).borrow();
-    let s0_states_ref = (*s0_ref.states).borrow();
+    let res = DFAState::new_key_set();
+    let res_ref = (*res).borrow_mut();
 
-    let calc_res_iter = s0_states_ref
+    for states_set in states_set_ref
+        .iter()
+        .map(|state| (*cache.get(&(**state).borrow().id).unwrap())) {
+
+        res_ref.extend(states_set);
+    }
+
+    // Rc::new(RefCell::new(KeySet::from_intoiter(
+    //     DFAState::states_set_getkey, closure_states_set
+    // )))
+    Rc::new(RefCell::new(
+        res
+    ))
+}
+
+/// 从StatesSet到StatesSet， 不直接用DFAState是因为counter有id分配的问题
+fn r#move(
+    s0: Rc<RefCell<StatesSet>>,
+    c: &char
+) -> Rc<RefCell<StatesSet>>
+
+{
+
+    let s0_states_set_ref = (*s0).borrow();
+
+    let calc_res_iter = s0_states_set_ref
         .iter()
         .filter(
             |&x| (**x).borrow().transitions
@@ -253,11 +322,29 @@ fn calc_move(
             KeySet::from_intoiter(DFAState::states_set_getkey, calc_res_iter)
         ));
 
-    match states_set_vec.iter().find(|&states_set| *(**states_set).borrow() == *(*calc_res).borrow()) {
-        None => { states_set_vec.push(calc_res); }
-        _ => ()
+    calc_res
+}
+
+
+/// find if states_set exists
+fn find_dfa_state_by_states_set(
+    states_set_vec: &Vec<Rc<RefCell<DFAState>>>,
+    target: Rc<RefCell<StatesSet>>
+) -> Option<Rc<RefCell<StatesSet>>>
+
+{
+    match states_set_vec.iter().find(|&states_set| {
+        let dfa_state = *(**states_set).borrow();
+        dfa_state.states == *(*target).borrow()
+    })
+    {
+        Some(&res) => { Some(res) }
+        _ => None
     }
 }
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Runner
