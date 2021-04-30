@@ -1,9 +1,7 @@
 use std::cell::RefCell;
-use std::hash::{Hash};
-use std::{collections::HashSet, rc::Rc};
-use std::iter:: { Chain };
+use std::hash::Hash;
 use std::ops::Range;
-
+use std::{collections::HashSet, rc::Rc};
 
 pub type CounterType = impl FnMut() -> usize;
 
@@ -101,24 +99,16 @@ pub trait GraphWalker: Eq + Hash {
 }
 
 #[inline]
-fn empty_chain<T>()
-    -> Chain<impl IntoIterator<Item=T>, impl IntoIterator<Item=T>>
-{
-    Vec::<T>::new().into_iter().chain(Vec::new().into_iter())
-}
-
-#[inline]
-fn char_inc(x: char) -> Option<char> {
+pub fn char_inc(x: &char) -> Option<char> {
     use std::char::from_u32;
 
-    from_u32((x as u32) + 1)
+    from_u32((*x as u32) + 1)
 }
 
 #[inline]
 pub fn char_range(lower: char, upper: char) -> Range<char> {
-    lower..char_inc(upper).unwrap()
+    lower..char_inc(&upper).unwrap()
 }
-
 
 mod test {
     #[test]
@@ -142,7 +132,7 @@ mod test {
 
     #[test]
     fn test_rc_set() {
-        use std::{collections::HashSet, rc::Rc};
+        use std::rc::Rc;
 
         #[derive(PartialEq, Eq, Hash)]
         struct Sample {

@@ -1,18 +1,17 @@
-use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::mem::drop;
 use std::rc::Rc;
-use std::slice::Iter;
 use std::{
-    cell::RefCell,
-    collections::btree_map::Range,
-    iter::{Chain, IntoIterator},
-    vec::IntoIter,
+    borrow::{Borrow},
+    collections::{HashSet, VecDeque},
+    rc::Weak,
 };
+use std::{cell::RefCell, iter::IntoIterator, vec::IntoIter};
 
-use key_set::{ KeySet, KeyHashSet };
+use key_set::{KeyHashSet, KeySet};
 
-use super::utils::{char_range, CounterType, GraphWalker};
+use super::utils::{char_inc, char_range, CounterType, GraphWalker};
 
 ///! 因为只有一套实现，所以不需要定义接口
 
@@ -56,13 +55,20 @@ pub struct CharSet {
 
 impl CharSet {
     pub fn new() -> Self {
-        CharSet {
+        Self {
             char_scopes: Vec::new(),
         }
     }
 
+    pub fn with_char_scope(char_scope: (char, char)) -> Self {
+        let char_scopes = vec![char_scope];
+
+        Self { char_scopes }
+    }
+
     pub fn add(&mut self, char_scope: (char, char)) {
-        self.char_scopes.push(char_scope) // return ()
+        self.char_scopes.push(char_scope); // push return ()
+        self.compress(); // 每次都压缩可能不太合适
     }
 
     pub fn contains(&self, inputc: &char) -> bool {
@@ -90,6 +96,37 @@ impl CharSet {
 
     pub fn iter(&self) -> IntoIter<char> {
         self.to_vec().into_iter()
+    }
+
+    // merge char_scopes
+    pub fn compress(&mut self) {
+        if self.is_empty() {
+            return;
+        }
+
+        self.char_scopes
+            .sort_by_cached_key(|(lower, _)| lower.clone());
+        let mut compressed_vecdeq = VecDeque::new();
+        compressed_vecdeq.push_back(self.char_scopes[0]);
+
+        for (lower, upper) in self.char_scopes.iter() {
+            let here = compressed_vecdeq.back_mut().unwrap();
+
+            let here_upper_inc = match char_inc(&here.1) {
+                Some(upper_inc) => upper_inc,
+                None => here.1,
+            };
+
+            if (here.1 >= *lower || here_upper_inc == *lower)
+                && (here.1 <= *upper || here_upper_inc == *upper)
+            {
+                here.1 = upper.clone();
+            } else if here_upper_inc < *lower {
+                compressed_vecdeq.push_back((lower.clone(), upper.clone()));
+            }
+        }
+
+        self.char_scopes = compressed_vecdeq.into_iter().collect();
     }
 
     fn _test(&self) {
@@ -159,7 +196,7 @@ impl GrammarNode {
     /// Static Create Method
     ///
     pub fn new() -> Self {
-        GrammarNode {
+        Self {
             childen: Vec::new(),
             nodetype: GrammarNodeType::Epsilon,
             repeat_times: (1, 1),
@@ -168,7 +205,7 @@ impl GrammarNode {
     }
 
     pub fn from_charset(chars: CharSet) -> Self {
-        let mut node = GrammarNode::new();
+        let mut node = Self::new();
         node.nodetype = GrammarNodeType::LexNode;
         node.chars = chars;
 
@@ -176,21 +213,21 @@ impl GrammarNode {
     }
 
     pub fn from_charset_repeat_times(chars: CharSet, repeat_times: (usize, usize)) -> Self {
-        let mut node = GrammarNode::from_charset(chars);
+        let mut node = Self::from_charset(chars);
         node.repeat_times = repeat_times;
 
         node
     }
 
     pub fn create_or_node() -> Self {
-        let mut node = GrammarNode::new();
+        let mut node = Self::new();
         node.nodetype = GrammarNodeType::Or;
 
         node
     }
 
     pub fn create_and_node() -> Self {
-        let mut node = GrammarNode::new();
+        let mut node = Self::new();
         node.nodetype = GrammarNodeType::And;
 
         node
@@ -199,7 +236,7 @@ impl GrammarNode {
     ///
     /// Instance Update Method
     ///
-    pub fn add_child(&mut self, child: GrammarNode) {
+    pub fn add_child(&mut self, child: Self) {
         self.childen.push(Box::new(child))
     }
 
@@ -257,7 +294,7 @@ impl State {
     /// Static Create Method
     ///
     pub fn with_counter(counter: &mut CounterType) -> Self {
-        State {
+        Self {
             id: counter(),
             acceptable: false,
             transitions: Vec::new(),
@@ -267,7 +304,7 @@ impl State {
 
     /// with acceptable is true
     pub fn with_counter_accept(counter: &mut CounterType) -> Self {
-        let mut state = State::with_counter(counter);
+        let mut state = Self::with_counter(counter);
         state.acceptable = true;
         state
     }
@@ -289,7 +326,7 @@ impl State {
     }
 
     fn dump(
-        state: &State,
+        state: &Self,
         f: &mut fmt::Formatter<'_>,
         visited_states: &mut HashSet<usize>,
     ) -> fmt::Result {
@@ -305,7 +342,7 @@ impl State {
         for transition in this_state.transitions.iter() {
             let to_state = (*transition.to_state).borrow();
             if !visited_states.contains(&to_state.id) {
-                match State::dump(&to_state, f, visited_states) {
+                match Self::dump(&to_state, f, visited_states) {
                     Err(err) => {
                         return Err(err);
                     }
@@ -399,20 +436,17 @@ impl GraphWalker for State {
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Transition
-pub trait BaseState {
-
-}
 
 #[derive(Debug, Clone)]
 pub struct Transition {
     pub chars: CharSet,
     pub max_times: usize,
-    pub to_state: Rc<RefCell<dyn BaseState>>,
+    pub to_state: Rc<RefCell<State>>,
 }
 
 impl Transition {
     pub fn from_grammar_node(node: &GrammarNode, to_state: Rc<RefCell<State>>) -> Self {
-        Transition {
+        Self {
             chars: node.chars.clone(),
             max_times: 1,
             to_state: to_state,
@@ -420,7 +454,7 @@ impl Transition {
     }
 
     pub fn from_max_times(max_times: usize, to_state: Rc<RefCell<State>>) -> Self {
-        Transition {
+        Self {
             chars: CharSet::new(),
             max_times,
             to_state: to_state,
@@ -428,7 +462,7 @@ impl Transition {
     }
 
     pub fn epsilon(to_state: Rc<RefCell<State>>) -> Self {
-        Transition {
+        Self {
             chars: CharSet::new(),
             max_times: 0,
             to_state: to_state,
@@ -459,33 +493,39 @@ impl fmt::Display for Transition {
 
 pub type StatesSet = KeyHashSet<Rc<RefCell<State>>, usize>;
 
+pub fn display_states_set(states_set: &StatesSet) {
+    let states_set_ref = (*states_set).borrow();
+
+    for state in states_set_ref.iter() {
+        let state_ref = (**state).borrow();
+        println!("{}", state_ref);
+    }
+}
+
 pub struct DFAState {
     pub id: usize,
     pub states: Rc<RefCell<StatesSet>>,
-    pub transitions: Vec<Transition>,
+    pub transitions: Vec<DFATransition>,
 }
 
 impl DFAState {
     pub fn dfa_states_get_key(x: &Rc<RefCell<DFAState>>) -> usize {
-        (*x).borrow().id
+        (**x).borrow().id
     }
 
     pub fn states_set_getkey(x: &Rc<RefCell<State>>) -> usize {
-        (*x).borrow().id
+        (**x).borrow().id
     }
 
     pub fn new_key_set() -> Rc<RefCell<StatesSet>> {
         Rc::new(RefCell::new(KeyHashSet::new(DFAState::states_set_getkey)))
     }
 
-    pub fn with_counter_states(
-        counter: &mut CounterType,
-        states: Rc<RefCell<StatesSet>>,
-    ) -> Self {
-        DFAState {
+    pub fn with_counter_states(counter: &mut CounterType, states: Rc<RefCell<StatesSet>>) -> Self {
+        Self {
             id: counter(),
             states,
-            transitions: vec![]
+            transitions: vec![],
         }
     }
 
@@ -496,9 +536,72 @@ impl DFAState {
             .any(|state| (*(*state)).borrow().acceptable)
     }
 
-    pub fn add_transition(&mut self, transition: Transition) {
+    pub fn add_transition(&mut self, transition: DFATransition) {
         self.transitions.push(transition)
     }
+
+    pub fn has_transition(&self, to_state: Rc<RefCell<DFAState>>) -> bool {
+        self.transitions
+            .iter()
+            .any(|trans| (trans.to_state.upgrade().unwrap()) == to_state)
+    }
+
+    /// Print
+    fn dump(
+        state: &Self,
+        f: &mut fmt::Formatter<'_>,
+        visited_states: &mut HashSet<usize>,
+    ) -> fmt::Result {
+        let this_state = state;
+        match writeln!(f, "{}", this_state) {
+            // 打印单状态
+            Err(err) => return Err(err),
+            _ => (),
+        }
+
+        visited_states.insert(this_state.id);
+
+        for transition in this_state.transitions.iter() {
+            let to_state_rc = transition.to_state.upgrade().unwrap();
+            let to_state = to_state_rc.as_ref().borrow();
+
+            if !visited_states.contains(&to_state.id) {
+                match Self::dump(&to_state, f, visited_states) {
+                    Err(err) => {
+                        return Err(err);
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// 根据to_state查找transition, 没有就创建;
+/// 在这个transition的charset上插入这个字符
+pub fn insert_char_on_transition(
+    from_state: Rc<RefCell<DFAState>>,
+    to_state: Rc<RefCell<DFAState>>,
+    c: char,
+) {
+    let from_state_ref = from_state.as_ref().borrow();
+    let trans_ind = from_state_ref
+        .transitions
+        .iter()
+        .position(|trans| trans.to_state.upgrade().unwrap() == to_state)
+        .unwrap();
+    let mut new_trans = from_state_ref.transitions[trans_ind].clone();
+    drop(from_state_ref);
+
+    new_trans.chars.add((c, c));
+    from_state
+        .as_ref()
+        .borrow_mut()
+        .transitions
+        .remove(trans_ind);
+    from_state.as_ref().borrow_mut().transitions.push(new_trans);
 }
 
 /// DFAState 比较相等根据它所包含的State
@@ -509,6 +612,100 @@ impl PartialEq for DFAState {
         let other_keyset = (*other.states).borrow();
 
         *state_keyset == *other_keyset
+    }
+}
+
+/// Show one state
+impl fmt::Display for DFAState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut show_str = String::from(format!("({})", self.id));
+
+        if self.transitions.len() > 0 {
+            for transition in self.transitions.iter() {
+                let to_state = &transition.to_state.upgrade().unwrap();
+                let to_state_id = (*(*to_state)).borrow().id;
+
+                show_str.push_str(
+                    format!(
+                        "\t{} -> {}",
+                        format!("{}", transition),
+                        format!("({})", to_state_id)
+                    )
+                    .as_str(),
+                );
+
+                show_str.push('\n');
+            }
+        }
+
+        write!(f, "{}", show_str.as_str()).ok();
+
+        write!(f, "\tNFA states: ",).ok();
+        write!(
+            f,
+            "{}\n",
+            (*(self.states))
+                .borrow()
+                .iter()
+                .map(|state| format!("_{}", (**state).borrow().id))
+                .collect::<Vec<String>>()
+                .join(", ")
+        ).ok();
+
+        if self.is_acceptable() {
+            writeln!(f, "\t(acceptable)").ok();
+        }
+
+        if self.transitions.is_empty() {
+            writeln!(f, "\t(end)").ok();
+        }
+
+        Ok(())
+    }
+}
+
+/// Show full state
+impl fmt::Debug for DFAState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut visited_states = hashset!();
+
+        match Self::dump(self, f, &mut visited_states) {
+            Err(err) => Err(err),
+            Ok(()) => Ok(()),
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/////// DFATransition: 因为有to_state这个字段， 所以无法复用, 而且实际上性质也不同
+#[derive(Clone)]
+pub struct DFATransition {
+    pub chars: CharSet,
+    pub to_state: Weak<RefCell<DFAState>>,
+}
+
+impl DFATransition {
+    pub fn new(to_state: Weak<RefCell<DFAState>>) -> Self {
+        Self {
+            chars: CharSet::new(),
+            to_state: to_state,
+        }
+    }
+
+    pub fn with_chars(to_state: Weak<RefCell<DFAState>>, chars: CharSet) -> Self {
+        let mut this = Self::new(to_state);
+        this.chars = chars;
+        this
+    }
+
+    pub fn is_match(&self, inputc: &char) -> bool {
+        self.chars.contains(inputc)
+    }
+}
+
+impl fmt::Display for DFATransition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.chars)
     }
 }
 
