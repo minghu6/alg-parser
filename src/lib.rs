@@ -10,7 +10,7 @@ extern crate maplit;
 pub mod data;
 pub mod utils;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Weak};
 use std::rc::Rc;
 use std::{
     borrow::{Borrow},
@@ -20,7 +20,7 @@ use std::{
 use key_set::{KeyHashSet, KeySet};
 
 use data::*;
-use utils::{yes, CounterType, GraphWalker};
+use utils::*;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Converter
@@ -333,6 +333,8 @@ fn find_dfa_state_by_states_set(
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Runner
+
+// Do NFA match
 pub fn match_with_nfa(state: &State, input: &str) -> bool {
     println!("NFA matching: {} ", input);
 
@@ -346,7 +348,9 @@ pub fn match_with_nfa(state: &State, input: &str) -> bool {
     matched
 }
 
-fn _match_with_nfa(state: &State, chars_input: &[char], init_index: usize) -> usize {
+fn _match_with_nfa(state: &State, chars_input: &[char], init_index: usize)
+-> usize
+{
     println!("trying state : {}, index ={}", state.id, init_index);
 
     let mut next_index = init_index;
@@ -365,15 +369,15 @@ fn _match_with_nfa(state: &State, chars_input: &[char], init_index: usize) -> us
         } else if transition.is_match(&chars_input[init_index]) {
             next_index += 1;
 
-            if next_index < chars_input.len() {
-                next_index = _match_with_nfa(&next_state, chars_input, next_index);
-            } else {
-                // 如果最终状态不可接受，意味着匹配失败
+            if next_index == chars_input.len() {
                 if reach_acceptable_state(&next_state) {
-                    break;
+                    break;  // 成功匹配
                 } else {
-                    next_index -= 1
+                    // 如果最终状态不可接受，意味着分支匹配失败
+                    next_index -= 1;
                 }
+            } else {
+                next_index = _match_with_nfa(&next_state, chars_input, next_index);
             }
         }
     }
@@ -387,10 +391,61 @@ fn reach_acceptable_state(state: &State) -> bool {
         return true;
     }
 
-    state
-        .dfs_walk(&yes)
+    state.transitions.iter().filter(|trans| trans.is_epsilon())
+    .any(|trnas| {
+        let next_state = trnas.to_state.clone();
+        if next_state.as_ref().borrow().acceptable { true }
+        else { reach_acceptable_state(&next_state.as_ref().borrow()) }
+    })
+}
+
+// Do DFA match
+pub fn match_with_dfa(state: &DFAState, input: &str) -> bool {
+    println!("DFA matching: {} ", input);
+
+    let chars_input: Vec<char> = input.chars().map(|x| x).collect();
+
+    let matched = match _match_with_dfa(state, &chars_input[..], 0) {
+        Ok((_, nxt_st)) => {
+            nxt_st.as_ref().borrow().is_acceptable()
+        }
+        _ => {
+            false
+        }
+    };
+
+    println!("matched? : {}\n", matched);
+
+    matched
+}
+
+fn _match_with_dfa(state: &DFAState, chars_input: &[char], init_index: usize)
+-> Result<(usize, Rc<RefCell<DFAState>>), ()>
+{
+    println!("trying DFA state : {}, index ={}", state.id, init_index);
+
+    if let Some(next_state) = match state.transitions
         .iter()
-        .any(|state| (**state).borrow().acceptable)
+        .find(|trans| trans.is_match(&chars_input[init_index])) {
+            Some(trans) => Some(Weak::clone(&trans.to_state)),
+            None => None
+        }
+    {
+        let next_index = init_index + 1;
+
+        // 递归结束条件
+        if next_index >= chars_input.len() {
+            return Ok((next_index, next_state.upgrade().unwrap()));
+        }
+
+        _match_with_dfa(
+            &next_state.upgrade().unwrap().as_ref().borrow(),
+            chars_input,
+            next_index
+        )
+    } else {
+        Err(())
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
