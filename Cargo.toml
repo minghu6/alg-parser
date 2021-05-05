@@ -11,3 +11,12 @@ cute = "^0.3.0"
 maplit = "^1.0.2"
 #key-set = { git = "https://github.com/minghu6/rust-key-set", branch = "master" }
 key-set = { path = "../key-set" }
+
+
+[dependencies.proc_macros]
+package = "alg-parser-proc-macros"
+path = "src/proc_macros"
+version = "0.1.0"  # Same as main
+
+[workspace]
+members = ["src/proc_macros"]

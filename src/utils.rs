@@ -1,7 +1,12 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, slice::SliceIndex};
 use std::hash::Hash;
 use std::ops::Range;
-use std::{collections::HashSet, rc::Rc};
+use std::{
+    collections::HashSet,
+    rc::Rc,
+    ops::Index
+};
+
 
 pub type CounterType = impl FnMut() -> usize;
 
@@ -27,6 +32,12 @@ pub fn yes<T>(_: T) -> bool {
 #[inline]
 pub fn no<T>(_: T) -> bool {
     false
+}
+
+#[inline]
+pub fn but_last_n_str(input: &str, n: isize) -> &str {
+    let normal_n = if n >= 0 { n as usize } else { (-n) as usize };
+    &input[0..input.len() - normal_n]
 }
 
 /// A Tree Walker means:
@@ -110,6 +121,7 @@ pub fn char_range(lower: char, upper: char) -> Range<char> {
     lower..char_inc(&upper).unwrap()
 }
 
+#[cfg(test)]
 mod test {
     #[test]
     fn test_counter() {
@@ -144,5 +156,13 @@ mod test {
         set.insert(Rc::new(&Sample { id: 1 }));
 
         assert!(set.contains(&Rc::new(&Sample { id: 1 })))
+    }
+
+    #[test]
+    fn test_but_last_n() {
+        use super::{but_last_n_str};
+
+        assert_eq!(but_last_n_str("abc_d", -2), "abc");
+        assert_eq!(but_last_n_str("abc_d", 2), "abc");
     }
 }
