@@ -9,6 +9,8 @@ edition = "2018"
 [dependencies]
 cute = "^0.3.0"
 maplit = "^1.0.2"
+paste = "^1.0"
+unstringify = "0.1.1"
 #key-set = { git = "https://github.com/minghu6/rust-key-set", branch = "master" }
 key-set = { path = "../key-set" }
 

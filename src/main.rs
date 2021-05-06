@@ -1,11 +1,16 @@
 #![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(mixed_script_confusables)]
 
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+};
 
 //use alg_parser::data::*;
 use alg_parser::utils::*;
 use alg_parser::regex::*;
-use alg_parser::parser::*;
+use alg_parser::parser_demo::*;
+
 use alg_parser::charset;
 
 fn demo_regex_nfa_dfa() {
@@ -141,51 +146,8 @@ fn demo_regex_nfa_dfa() {
     display_sample_2();
 }
 
-/// 一个简单四则运算的语法，为了支持LL(1)的文法，消除了左递归
-/// expression:
-/// | sum
-///
-/// sum:
-/// | product addend
-///
-/// product:
-/// | pri multiplier
-///
-/// pri:
-/// | Id
-/// | IntLit
-/// | LPAREN sum RPAREN
-///
-/// multiplier:
-/// | (* | /) pri multiplier | ε
-///
-/// addend:
-/// | (+ | -) sum | ε
-fn grammar_expression() {
-    let mut expression_rule= LLGrammarRule::with_name("expression");
-    let mut sum_rule = LLGrammarRule::with_name("sum");
-
-    let mut pri_rule = LLGrammarRule::with_name("pri");
-    pri_rule.add_branch(vec![
-        LLGrammarGenerals::Terminal(id_m())
-    ]);
-    pri_rule.add_branch(vec![
-        LLGrammarGenerals::Terminal(int_m())
-    ]);
-    pri_rule.add_branch(vec![
-        LLGrammarGenerals::Terminal(lparen_m()),
-        LLGrammarGenerals::Rule(&sum_rule),
-        LLGrammarGenerals::Terminal(rparen_m()),
-    ]);
-
-
-    expression_rule.add_branch(vec![LLGrammarGenerals::Rule(&sum_rule)]);
-    println!("{:?}", expression_rule);
-    println!("{:?}", pri_rule);
-}
-
 fn demo_ll_parser() {
-    grammar_expression();
+    grammar_ll_expression();
 }
 
 fn main() {

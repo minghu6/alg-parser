@@ -6,6 +6,8 @@
 #![feature(stmt_expr_attributes)]
 #![feature(proc_macro_hygiene)]
 
+#![allow(mixed_script_confusables)]
+
 #[macro_use(c)]
 extern crate cute;
 #[macro_use]
@@ -13,7 +15,6 @@ extern crate maplit;
 
 extern crate proc_macros; /* to avoid a cargo bug when cross-compiling (e.g. wasm) */
 
-// #[::proc_macro_hack::proc_macro_hack] /* if function-like proc-macros expanding to exprs */
 pub use proc_macros::{
     // make_regex_node
 };
@@ -21,6 +22,8 @@ pub use proc_macros::{
 pub mod utils;
 pub mod regex;
 pub mod parser;
+
+pub mod parser_demo;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Unit Test

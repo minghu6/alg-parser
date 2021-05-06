@@ -14,7 +14,7 @@ use std::{
 
 use key_set::{KeyHashSet, KeySet};
 
-use super::utils::{but_last_n_str, char_inc, char_range, gen_counter, CounterType, GraphWalker};
+use super::utils::{char_inc, char_range, gen_counter, CounterType, GraphWalker};
 
 ///! 因为只有一套实现(起码我开始写的时候是这么认为的，汗)，所以不需要定义接口
 
@@ -1160,20 +1160,27 @@ pub fn ascii_charset() -> CharSet {
 }
 
 /// A Native Raw Primitive Regex Matcher
-pub struct PriRegexMatcher<'a> {
-    pub name: &'a str,
-    pub state: Rc<RefCell<DFAState>>,
+#[derive(Clone)]
+pub struct PriRegexMatcher {
+    pub name: String,
+    state: Rc<RefCell<DFAState>>,
 }
 
-impl PriRegexMatcher<'a> {
-    pub fn with_regex_node(name: &'a str, regex_node: &RegexNode) -> Self {
+impl PriRegexMatcher {
+    pub fn with_regex_node(name: &str, regex_node: &RegexNode) -> Self {
         let nfa_root = regex2nfa(&mut gen_counter(), regex_node);
         let dfa_root = nfa2dfa(&mut gen_counter(), nfa_root, &ascii_charset());
 
         Self {
-            name,
+            name: name.to_string(),
             state: dfa_root,
         }
+    }
+
+    pub fn new_key_set() -> Rc<RefCell<KeyHashSet<Self, String>>> {
+        Rc::new(RefCell::new(
+            KeyHashSet::new(|x| x.name.clone())
+        ))
     }
 
     pub fn is_match(&self, value: &str) -> bool {
@@ -1181,9 +1188,15 @@ impl PriRegexMatcher<'a> {
     }
 }
 
-impl fmt::Display for PriRegexMatcher<'a> {
+impl fmt::Display for PriRegexMatcher {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
+    }
+}
+
+impl PartialEq for PriRegexMatcher {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
     }
 }
 
@@ -1208,7 +1221,7 @@ pub fn lit_regex_node(lit: &str) -> RegexNode {
 #[macro_export]
 macro_rules! make_matcher {
     ($name_r:ident => $name_m:ident) => {
-        pub fn $name_m() -> $crate::regex::PriRegexMatcher<'a> {
+        pub fn $name_m() -> $crate::regex::PriRegexMatcher {
             $crate::regex::PriRegexMatcher::with_regex_node(
                 $crate::utils::but_last_n_str(stringify!($name_r), 2),
                 &$name_r(),
@@ -1224,7 +1237,7 @@ macro_rules! make_regex_and_matcher {
             $crate::regex::lit_regex_node($value)
         }
 
-        pub fn $name_m() -> $crate::regex::PriRegexMatcher<'a> {
+        pub fn $name_m() -> $crate::regex::PriRegexMatcher {
             $crate::regex::PriRegexMatcher::with_regex_node($name, &$name_r())
         }
     };

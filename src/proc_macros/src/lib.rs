@@ -2,7 +2,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream, Result};
 use syn::{Ident, LitStr, Token, parse_macro_input};
-use quote::{quote, quote_spanned, format_ident};
+use quote::{quote, format_ident};
 
 
 struct LitDef {
