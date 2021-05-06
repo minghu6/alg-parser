@@ -69,8 +69,8 @@ impl LLGrammarRule {
         &self.branches[..]
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> String {
+        self.name.to_string()
     }
 }
 
@@ -106,7 +106,7 @@ impl fmt::Display for LLGrammarRule {
             for frag in branch.iter() {
                 match frag {
                     LLGrammarGeneral::Rule(rule) => write!(f, " {}", rule.as_ref().borrow().name)?,
-                    LLGrammarGeneral::Terminal(terminal) => write!(f, " {}", terminal.name)?,
+                    LLGrammarGeneral::Terminal(terminal) => write!(f, " {}", terminal.name())?,
                     LLGrammarGeneral::Epsilon => write!(f, " ε")?,
                 }
             }
@@ -133,6 +133,17 @@ pub enum LLGrammarGeneral {
 }
 
 impl LLGrammarGeneral {
+    pub fn name(&self) -> String {
+        match self {
+            Self::Rule(rule)
+                => rule.as_ref().borrow().name().to_owned(),
+            Self::Terminal(term)
+                => term.name().to_string(),
+            Self::Epsilon
+                => "ε".to_string()
+        }
+    }
+
     pub fn get_rule(&self) -> Option<&Rc<RefCell<LLGrammarRule>>> {
         match self {
             Self::Rule(rule) => Some(rule),
@@ -159,7 +170,7 @@ impl fmt::Display for LLGrammarGeneral {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Rule(rule) => write!(f, "{}", rule.as_ref().borrow()),
-            Self::Terminal(terminal) => write!(f, "{}", terminal.name),
+            Self::Terminal(terminal) => write!(f, "{}", terminal.name()),
             Self::Epsilon => write!(f, "ε"),
         }
     }
@@ -173,6 +184,7 @@ impl fmt::Debug for LLGrammarGeneral {
         }
     }
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// LL Grammar DSL
@@ -274,9 +286,20 @@ type FirstSetType = HashMap<String, Rc<RefCell<HashSet<String>>>>;
 /// LL(1)
 pub fn first_sets(rule: &Rc<RefCell<LLGrammarRule>>) -> FirstSetType {
     let mut res = hashmap! {};
+    // let rule_fun
+    //      = |genl: Rc<RefCell<LLGrammarGeneral>>| genl.as_ref().borrow().is_rule();
+    // for rule in
+    //     entry_general.dfs_walk(&rule_fun)
+    // {
+    //     _first_sets(&rule, &mut res, &mut hashset! {});
+
+    // }
+
     let mut i = 1usize;
     loop {
-        println!("round: {}", i);
+        if i > 2 {
+            println!("another round: {}", i - 1);
+        }
         if _first_sets(rule, &mut res, &mut hashset! {}) {
             break;
         }
@@ -306,54 +329,24 @@ fn _first_sets(
         }
     }
 
-    // 第一遍计算
+    // 第一遍计算，要计算所有rule节点，包括FirstSet所不需要的
+    // 从上到下
     for branch in rule_ref.branches() {
-        let mut brg = branch.into_iter();
-
-        loop {
-            let genl;
-            match brg.next() {
-                Some(_genl) => {
-                    genl = _genl.clone();
-                }
-                None => {
-                    break;
-                }
-            }
-
+        for genl in branch.into_iter() {
             match genl {
                 LLGrammarGeneral::Rule(genl_rule) => {
                     if !visited_rule.contains(&genl_rule.as_ref().borrow().name) {
                         // 之后取出来， 放入this_first_set
                         _first_sets(&genl_rule, acc, visited_rule);
                     }
-
-                    if any_branch_maybe_epsilon(&genl_rule) {
-                        continue;
-                    }
-                }
-                LLGrammarGeneral::Terminal(matcher) => {
-                    this_first_set
-                        .as_ref()
-                        .borrow_mut()
-                        .insert(matcher.name.clone());
-                }
-                LLGrammarGeneral::Epsilon => (),
+                },
+                _ => (),
             }
-
-            break;
-        }
-
-        if any_branch_maybe_epsilon(rule) {
-            this_first_set
-                .as_ref()
-                .borrow_mut()
-                .insert("epsilon".to_string());
         }
     }
 
     // 第二遍加入
-    let mut stable = false;
+    let mut stable = true;
     for branch in rule_ref.branches() {
         let mut brg = branch.into_iter();
 
@@ -371,7 +364,7 @@ fn _first_sets(
             match genl {
                 LLGrammarGeneral::Rule(genl_rule) => {
                     let genl_rule_ref = genl_rule.as_ref().borrow();
-                    let child_set = acc.get(&genl_rule_ref.name).unwrap();
+                    let child_set = acc.get(&genl_rule_ref.name()).unwrap();
                     let child_set_ref = child_set.as_ref().borrow();
                     let mut this_first_set_ref = this_first_set.as_ref().borrow_mut();
 
@@ -383,11 +376,24 @@ fn _first_sets(
                     if any_branch_maybe_epsilon(&genl_rule) {
                         continue;
                     }
-                }
+                },
+                LLGrammarGeneral::Terminal(matcher) => {
+                    this_first_set
+                        .as_ref()
+                        .borrow_mut()
+                        .insert(matcher.name().to_string());
+                },
                 _ => (),
             }
 
             break;
+        }
+
+        if any_branch_maybe_epsilon(rule) {
+            this_first_set
+                .as_ref()
+                .borrow_mut()
+                .insert("epsilon".to_string());
         }
     }
 
@@ -406,11 +412,15 @@ fn any_branch_maybe_epsilon(rule: &Rc<RefCell<LLGrammarRule>>) -> bool {
             return true;
         };
 
+        if !br.iter().all(|genl| genl.is_rule()) {
+            continue;
+        }
+
         // 滤得只含grammar rule的分支
         // 然后检查这些分支的每一个rule是否都有epsilon分支(递归)
+        // LL 没有左递归，可以放心递归
         if br
             .iter()
-            .filter(|genl| genl.is_rule())
             .all(|genl| any_branch_maybe_epsilon(genl.get_rule().unwrap()))
         {
             return true;

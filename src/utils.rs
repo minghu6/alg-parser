@@ -73,17 +73,14 @@ pub trait TreeWalker {
     }
 }
 
-pub trait GraphWalker: Eq + Hash {
+pub trait GraphWalker<'a, K: Hash + Eq> {
     fn get_childern(&self) -> Box<dyn Iterator<Item = Rc<RefCell<Self>>>>;
 
-    fn get_id(&self) -> u128;
+    fn get_id(&self) -> K;
 
-    /// pred: used for cut branch
-    /// pred maybe `|x| true`
-    /// walk don't contains itself
-    fn dfs_walk(&self, pred: &impl Fn(Rc<RefCell<Self>>) -> bool) -> Vec<Rc<RefCell<Self>>> {
+    fn dfs_walk(&self) -> Vec<Rc<RefCell<Self>>> {
         let mut walk_stack = Vec::<Rc<RefCell<Self>>>::new();
-        let mut visited_nodes = HashSet::<u128>::new();
+        let mut visited_nodes = HashSet::<K>::new();
         let mut res = Vec::<Rc<RefCell<Self>>>::new();
 
         // walk_stack.push(Rc::new(self));
@@ -94,7 +91,7 @@ pub trait GraphWalker: Eq + Hash {
             let cur_node_id = (*cur_node).borrow().get_id();
 
             // 执行剪枝操作
-            if visited_nodes.contains(&cur_node_id) || !pred(Rc::clone(&cur_node)) {
+            if visited_nodes.contains(&cur_node_id) {
                 continue;
             }
 

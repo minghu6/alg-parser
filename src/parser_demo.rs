@@ -5,26 +5,26 @@ use super::*;  // require macro
 /// 一个简单四则运算的语法，为了支持LL(1)的文法，消除了左递归
 /// ```antlr
 /// expression:
-/// | sum;
+///   | sum;
 ///
 /// sum:
-/// | product addend;
+///   | product addend;
 ///
 /// product:
-/// | pri multiplier;
+///   | pri multiplier;
 ///
 /// pri:
-/// | Id;
-/// | IntLit;
-/// | LPAREN sum RPAREN;
+///   | Id;
+///   | IntLit;
+///   | LPAREN sum RPAREN;
 ///
 /// multiplier:
-/// | (* | /) pri multiplier;
-/// | ε;
+///   | (* | /) pri multiplier;
+///   | ε;
 ///
 /// addend:
-/// | (+ | -) sum;
-/// | ε;
+///   | (+ | -) sum;
+///   | ε;
 /// ```
 ///
 pub fn grammar_ll_expression() -> LLGrammarGeneral {
@@ -87,7 +87,7 @@ pub fn ll_expression_parser() {
 
     let expression_first_sets = first_sets(expression_genl.get_rule().unwrap());
 
-    println!("{:?}", expression_first_sets);
+    println!("{:#?}", expression_first_sets);
 }
 
 #[cfg(test)]

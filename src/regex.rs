@@ -14,7 +14,7 @@ use std::{
 
 use key_set::{KeyHashSet, KeySet};
 
-use super::utils::{char_inc, char_range, gen_counter, CounterType, GraphWalker};
+use super::utils::{char_inc, char_range, gen_counter, CounterType};
 
 ///! 因为只有一套实现(起码我开始写的时候是这么认为的，汗)，所以不需要定义接口
 
@@ -412,25 +412,6 @@ impl fmt::Debug for State {
     }
 }
 
-/// Graph Walker for State
-impl GraphWalker for State {
-    fn get_id(&self) -> u128 {
-        self.id as u128
-    }
-
-    fn get_childern(&self) -> Box<dyn Iterator<Item = Rc<RefCell<Self>>>> {
-        let childern_vec: Vec<Rc<RefCell<Self>>> = self
-            .transitions
-            .iter()
-            .map(|trans| {
-                let state = Rc::clone(&(*trans).to_state);
-                state
-            })
-            .collect();
-
-        Box::new(childern_vec.into_iter())
-    }
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Transition
@@ -1162,7 +1143,7 @@ pub fn ascii_charset() -> CharSet {
 /// A Native Raw Primitive Regex Matcher
 #[derive(Clone)]
 pub struct PriRegexMatcher {
-    pub name: String,
+    name: String,
     state: Rc<RefCell<DFAState>>,
 }
 
@@ -1175,6 +1156,10 @@ impl PriRegexMatcher {
             name: name.to_string(),
             state: dfa_root,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn new_key_set() -> Rc<RefCell<KeyHashSet<Self, String>>> {
