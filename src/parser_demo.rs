@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 
 use super::parser::*;
 use super::*;  // require macro
@@ -90,12 +91,59 @@ pub fn ll_expression_parser() {
     println!("{:#?}", expression_first_sets);
 }
 
+
+pub fn grammar_demo1() -> Gram {
+    declare_nonterminal!(E);
+    declare_nonterminal!(T);
+    declare_nonterminal!(E1);
+    declare_nonterminal!(T1);
+    declare_nonterminal!(F);
+    declare_terminal!(add);
+    declare_terminal!(mul);
+    declare_terminal!(lparen);
+    declare_terminal!(rparen);
+    declare_terminal!(id);
+    use_epsilon!(ε);
+
+    // Yes, it just looks like a Haskell EDSL!
+    grammar![G|
+        E:
+        | T E1;
+
+        E1:
+        | add T E1;
+        | ε;
+
+        T:
+        | F T1;
+
+        T1:
+        | mul F T1;
+        | ε;
+
+        F:
+        | lparen E rparen;
+        | id;
+    |]
+}
+
+
 #[cfg(test)]
 mod test {
+    #[ignore]
     #[test]
     fn ll_expression_parser_works() {
         use super::ll_expression_parser;
 
         ll_expression_parser();
+    }
+
+    #[test]
+    fn test_grammar() {
+        use super::grammar_demo1;
+
+        let g1 = grammar_demo1();
+
+        println!("{:#?}", g1);
     }
 }

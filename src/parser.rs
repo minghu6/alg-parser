@@ -5,36 +5,128 @@ use std::{
     rc::Rc,
 };
 
+use indexmap::{IndexSet, indexset};
+
 use super::regex::PriRegexMatcher;
 
 ////////////////////////////////////////////////////////////////////////////////
-/////// TokenType
+/////// Grammar Symbol
+
+/// 语法符号
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+pub enum GramSym {
+    Terminal(String),
+    NonTerminal(String)
+}
+
+/// 语法符号串
+#[derive(Hash, PartialEq, Eq, Debug)]
+pub enum GramSymStr {
+    Normal(Vec<GramSym>),
+    Epsilon
+}
+
+/// Grammar Production Type
+type GramProd = (GramSym, GramSymStr);
+
+#[derive(Debug)]
+pub struct Gram {
+    name: String,
+    productions: IndexSet<GramProd>
+}
+
+impl Gram {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            productions: indexset! {}
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn insert_prod(&mut self, prod: GramProd) {
+        self.productions.insert(prod);
+    }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
-/////// GrammarRule Common trait
-// pub trait GrammarRule{
-//     fn name(&self) -> &str;
+/////// Grammar DSL
 
-//     fn generals(&self) -> &[Vec<& Self>] where Self: Sized;
-// }
+#[macro_export]
+macro_rules! declare_terminal {
+    ($name:ident) => {
+        let $name = $crate::parser::GramSym::Terminal(
+            stringify!($name).to_string()
+        );
+    }
+}
 
-// impl PartialEq for dyn GrammarRule{
-//     fn eq(&self, other: &Self) -> bool {
-//         self.name() == other.name()
-//     }
-// }
+#[macro_export]
+macro_rules! declare_nonterminal {
+    ($name:ident) => {
+        let $name = $crate::parser::GramSym::NonTerminal(
+            stringify!($name).to_string()
+        );
+    }
+}
 
-// impl Hash for dyn GrammarRule{
-//     fn hash<H: Hasher>(&self, rule: &mut H) {
-//         rule.write(self.name().as_bytes())
-//     }
-// }
+//  限制只能引入已存在的符号
+#[macro_export]
+macro_rules! use_epsilon {
+    ($name:ident) => {
+        debug_assert!(stringify!($name) == "ε", "epsilon sym just should be `ε`");
+        declare_nonterminal!($name);
+    };
+}
 
-// impl fmt::Display for dyn GrammarRule{
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "{}", self.name())
-//     }
-// }
+/// 创建一个规则
+#[macro_export]
+macro_rules! grammar {
+    [$gram_name:ident|
+         $($name:ident : $(| $($gramsym:ident)+ ;)+ )+
+    |] =>
+    {
+        {
+            let mut _grammar = $crate::parser::Gram::new(stringify!($gram_name));
+            $(
+                $(
+                    let mut gram_str_vec = Vec::<$crate::parser::GramSym>::new();
+                    let mut has_epsilon = false;
+
+                    $(
+                        if stringify!($gramsym) == "ε" {
+                            has_epsilon = true;
+                        } else {
+                            gram_str_vec.push($gramsym.clone());
+                        }
+                    )+
+
+                    let gramsymstr = if has_epsilon {
+                        $crate::parser::GramSymStr::Epsilon
+                     } else {
+                        $crate::parser::GramSymStr::Normal(gram_str_vec)
+                     };
+
+                    _grammar.insert_prod(
+                        ($name.clone(), gramsymstr)
+                    );
+                )+
+            )+
+
+            _grammar
+        }
+    }
+}
+
+
+
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Lexer
