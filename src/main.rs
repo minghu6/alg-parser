@@ -147,7 +147,7 @@ fn demo_regex_nfa_dfa() {
 }
 
 fn demo_ll_parser() {
-    grammar_ll_expression();
+    demo_grammar_ll_expression();
 }
 
 fn main() {

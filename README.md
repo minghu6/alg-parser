@@ -5,4 +5,4 @@
 
 ### LL Parser Test
 
-`cargo test ll_expression_parser_works -- --nocapture`
+`cargo test test_grammar -- --nocapture`
