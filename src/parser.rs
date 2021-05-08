@@ -207,6 +207,13 @@ impl Gram {
     }
 }
 
+///```none
+///     1.If X is terminal, then FIRST(X) is {X}.
+///     2.If X → ε is a production, then add ε to FIRST(X).
+///     3.If X is nonterminal and X →Y1 Y2 ... Yk.
+///       从求取First(Y1)开始,如果Y1的某个产生式有ε,就继续求取First(Y2)......,
+///       如果整个串都已经耗尽了,就把ε也加入.
+///```
 fn _calc_first_sets_turn(
     productions: &IndexSet<GramProd>,
     first_sets: &mut HashMap<GramSym, HashSet<FstSetSym>>,
@@ -272,6 +279,13 @@ fn _calc_first_sets_turn(
     stable
 }
 
+/// ```none
+/// 1. Place $ in FOLLOW(S), where S is the start symbol and $ is the input right endmarker.
+/// 2. If there is a production A -> αΒβ, then everything in FIRST(β), except for ε, is placed in FOLLOW(B).
+/// 3. If there is a production A -> αΒ, or a production A -> αΒβ where FIRST(β) contains ε(i.e., β -> ε),
+///    then everything in FOLLOW(A) is in FOLLOW(B).
+///    如同计算First一样迭代，如果整个串都已经耗尽了,就把ε也加入Follow(B).
+/// ```
 fn _calc_follow_sets_turn(
     productions: &IndexSet<GramProd>,
     follow_sets: &mut FollowSets,
@@ -488,11 +502,50 @@ macro_rules! Follow {
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Lexer
-pub struct Lexer {
-    pub name: String,
-    pub token_type_map: HashMap<String, PriRegexMatcher>, // epsilon 不参与
+pub struct Token {
+    name: String,
+    value: String
 }
 
+impl Token {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+pub struct Lexer {
+    pub name: String,
+    pub token_type_map: HashMap<String, PriRegexMatcher>,  // epsilon 不参与
+}
+
+
+impl Lexer {
+    pub fn tokenize(&self, source: &str) -> Vec<Token> {
+        let mut tokens = vec![];
+        let mut cache = String::new();
+        for c in source.chars() {
+            cache.push(c);
+
+            // turn round matcher to try match
+            for (token_type, matcher) in self.token_type_map.iter() {
+                if matcher.is_match(&cache) {
+                    tokens.push(Token {
+                        name: token_type.clone(),
+                        value: cache
+                    });
+
+                    cache = String::new();
+                }
+            }
+        }
+
+        tokens
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Unit Test

@@ -19,13 +19,11 @@ use super::utils::{char_inc, char_range, gen_counter, CounterType};
 ///! 因为只有一套实现(起码我开始写的时候是这么认为的，汗)，所以不需要定义接口
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Charset
+//// Charset
 
 ///! charset!{a-z | 0-9 | 啊-吧}
 #[macro_export]
 macro_rules! charset {
-    //( $($char_scope:tt | )+ ) => (charset!($($charset) | +))
-
     ( $($lower:tt-$upper:tt)|* ) => {
         {
             let mut _charset = $crate::regex::CharSet::new();
@@ -45,7 +43,7 @@ macro_rules! charset {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub struct CharSet {
     pub char_scopes: Vec<(char, char)>,
 }
@@ -126,6 +124,64 @@ impl CharSet {
         self.char_scopes = compressed_vecdeq.into_iter().collect();
     }
 
+
+    ///
+    /// ```
+    /// use alg_parser::regex::CharSet;
+    /// use alg_parser::charset;
+    ///
+    /// debug_assert_eq!(CharSet::parse("a-c"), CharSet::with_char_scope(('a', 'c')));
+    /// debug_assert_eq!(CharSet::parse("A-Z0-9"), charset!{A-Z | 0-9});
+    /// debug_assert_eq!(CharSet::parse("_a-z"), charset!{_-_ | a-z});
+    /// debug_assert_eq!(CharSet::parse("abc"), charset!{a-a | b-b | c-c});
+    ///
+    /// ```
+    pub fn parse(input: &str) -> Self {
+        let mut char_scopes = vec![];
+        enum Status {
+            End, Fst, Mid
+        }
+
+        let mut status = Status::End;
+        let mut scope = vec![];
+        for c in input.chars() {
+            match status {
+                Status::End => {
+                    scope.push(c);
+                    status = Status::Fst;
+                },
+
+                Status::Fst => {
+                    match c {
+                        '-' => status = Status::Mid,
+                        _ => {
+                            scope.push(scope[0]);
+                            char_scopes.push((scope[0], scope[1]));
+                            scope = vec![c];
+                            status = Status::Fst;
+                        }
+                    }
+                },
+
+                Status::Mid => {
+                    scope.push(c);
+                    char_scopes.push((scope[0], scope[1]));
+                    scope = vec![];
+                    status = Status::End;
+                }
+            }
+        }
+
+        // recycle trail
+        if scope.len() == 1 {
+            char_scopes.push((scope[0], scope[0]));
+        }
+
+        Self {
+            char_scopes
+        }
+    }
+
     fn _test(&self) {
         // 用来看一下宏展开
         //charset!(a b);
@@ -167,6 +223,19 @@ impl IntoIterator for CharSet {
             .into_iter()
     }
 }
+
+impl PartialEq for CharSet {
+    fn eq(&self, other: &Self) -> bool {
+        let mut self_copy = self.clone();
+        self_copy.compress();
+
+        let mut other_copy = other.clone();
+        other_copy.compress();
+
+        self_copy.char_scopes == other_copy.char_scopes
+    }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /// GrammarNode: Simple Regex Node
@@ -270,10 +339,53 @@ impl RegexNode {
 
 impl fmt::Display for RegexNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //let mut indent = "";
-
         write!(f, "{}", self.in_short_text())
     }
+}
+
+#[macro_export]
+macro_rules! simple_regex {
+    ( $(
+         $([$charstr:literal]$($repeat:tt)?)+
+        ) |+
+    ) => {
+        {
+            let mut _root = $crate::regex::RegexNode::create_or_node();
+
+            $(
+                let mut _sub_and_node = $crate::regex::RegexNode::create_and_node();
+
+                $(
+                    let mut repeat_times = (1, 1);
+                    $(
+                        let repeat_s = stringify!($repeat);
+
+                        if repeat_s.len() == 3 {
+                            match repeat_s.chars().nth(1).unwrap() {
+                                '+' => repeat_times = (1, usize::MAX),
+                                '*' => repeat_times = (0, usize::MAX),
+                                _ => ()
+                            }
+                        }
+                    )?
+
+                    let charset = $crate::regex::CharSet::parse($charstr);
+
+                    _sub_and_node.add_child(
+                        $crate::regex::RegexNode::from_charset_repeat_times(
+                            charset,
+                            repeat_times
+                        )
+                    );
+                )+
+
+                _root.add_child(_sub_and_node);
+            )+
+
+            _root
+        }
+
+    };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1253,6 +1365,7 @@ make_regex_and_matcher!(div_r, div_m, "/", "'/'");
 make_regex_and_matcher!(lparen_r, lparen_m, "(", "'('");
 make_regex_and_matcher!(rparen_r, rparen_m, ")", "')'");
 
+
 /// Identity Regex
 /// [_a-zA-Z][_a-zA-Z0-9]+
 pub fn id_r() -> RegexNode {
@@ -1269,7 +1382,18 @@ pub fn id_r() -> RegexNode {
     root
 }
 
+pub fn intlit_r() -> RegexNode {
+    simple_regex!{ ["_a-zA-Z"]()["0-9a-zA-Z"]() }
+}
+
+pub fn strlit_r() -> RegexNode {
+    simple_regex!{ [r#"""#](1)[" \t\n"](*)[r#"""#](1) }
+}
+
 make_matcher!(id_r => id_m);
+make_matcher!(intlit_r => intlit_m);
+make_matcher!(strlit_r => strlit_m);
+
 
 /// Int Regex
 /// [0-9]+
@@ -1278,6 +1402,8 @@ pub fn number_r() -> RegexNode {
 }
 
 make_matcher!(number_r => number_m);
+
+
 
 
 
@@ -1313,6 +1439,14 @@ mod test {
             charset![a - a | 0 - 3].into_iter().collect::<HashSet<char>>(),
             hashset!['a', '0', '1', '2', '3']
         );
+    }
+
+    #[test]
+    fn test_simple_regex() {
+        use crate::simple_regex;
+
+        let regex1 = simple_regex!{ ["a-zb-xc"](+) ["z"]() ["z"]() };
+        println!("{}", regex1);
     }
 
     #[test]

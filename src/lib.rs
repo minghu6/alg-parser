@@ -23,7 +23,9 @@ pub mod utils;
 pub mod regex;
 pub mod parser;
 
+pub mod regex_demo;
 pub mod parser_demo;
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Unit Test

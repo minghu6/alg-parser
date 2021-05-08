@@ -172,12 +172,6 @@ mod test {
     #[test]
     fn test_grammar_first_follow_set() {
         use super::{grammar_demo1, grammar_demo2, grammar_demo3};
-        use crate::use_sym;
-
-        use_sym! {
-            E, T, E1, T1, F, add, mul, lparen, rparen, id, ε,
-            S, B, C, D, E, F, a, b, c, f, g, h, NUL
-        };
 
         ///////////////////////////////////////////////////////////////////////
         /////// G1 Grammar
