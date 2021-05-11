@@ -1,15 +1,16 @@
-use std::{
-    collections::{HashMap, HashSet},
-};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc, fmt};
 
-use indexmap::{indexset, IndexSet};
+use indexmap::{indexmap, indexset, IndexMap, IndexSet};
+use itertools::Itertools;
 
-use super::regex::PriRegexMatcher;
+use super::utils::Stack;
+use super::regex::*;
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Grammar Symbol
 
-/// 语法符号
+/// GramSym: 语法符号
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum GramSym {
     Terminal(String),
@@ -35,43 +36,96 @@ impl GramSym {
         !self.is_terminal()
     }
 
-    pub fn to_fst(&self) -> FstSetSym {
+    pub fn to_fst_set_sym(&self) -> FstSetSym {
         FstSetSym::Sym(self.name().to_string())
+    }
+
+    pub fn to_pred_set_sym(&self) -> PredSetSym {
+        PredSetSym::Sym(self.name().to_string())
     }
 }
 
-/// 语法符号串
+impl fmt::Display for GramSym {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sym_id
+        = if self.is_terminal() { format!("<{}>", self.name()) }
+          else { format!("[{}]", self.name()) };
+
+        write!(f, "{}", sym_id)
+    }
+}
+
+impl fmt::Display for Stack<GramSym> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, item) in self.iter().enumerate() {
+            if i < self.len() - 1 {
+                write!(f, "{} ", item)?
+            } else {
+                write!(f, "{}", item)?
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// GramSymStr: 语法符号串
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum GramSymStr {
-    Normal(Vec<GramSym>),
+    Str(Vec<GramSym>),
     Epsilon,
 }
 
 impl GramSymStr {
     pub fn is_normal(&self) -> bool {
         match self {
-            Self::Normal(_) => true,
+            Self::Str(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_epsilon(&self) -> bool {
+        match self {
+            Self::Epsilon => true,
             _ => false,
         }
     }
 
     pub fn get_normal(&self) -> Option<&Vec<GramSym>> {
         match self {
-            Self::Normal(normal) => Some(normal),
+            Self::Str(normal) => Some(normal),
             _ => None,
         }
     }
 }
 
-/// Grammar Production Type
-type GramProd = (GramSym, GramSymStr);
+impl fmt::Display for GramSymStr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Epsilon => write!(f, "epsilon"),
+            Self::Str(str_vec) => {
+                for (i, sym) in str_vec.iter().enumerate() {
+                    let sym_id
+                    = if sym.is_terminal() { format!("<{}>", sym.name()) }
+                      else { format!("[{}]", sym.name()) };
 
-#[derive(Debug)]
-pub struct Gram {
-    name: String,
-    productions: IndexSet<GramProd>,
+                    if i < str_vec.len() - 1 {
+                        write!(f, "{} ", sym_id)?
+                    } else {
+                        write!(f, "{}", sym_id)?
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
+/// GramProd: 语法产生式的类型
+type GramProd = (GramSym, GramSymStr);
+
+
+/// FstSets: FirstSets 类型
 type FirstSets = HashMap<GramSym, HashSet<FstSetSym>>;
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum FstSetSym {
@@ -79,6 +133,7 @@ pub enum FstSetSym {
     Epsilon,
 }
 
+/// FstSetSym: First Sets 符号类型
 impl FstSetSym {
     pub fn is_epsilon(&self) -> bool {
         match self {
@@ -86,13 +141,64 @@ impl FstSetSym {
             _ => false,
         }
     }
+
+    pub fn to_pred_set_sym(&self) -> PredSetSym {
+        match self {
+            Self::Epsilon => PredSetSym::Epsilon,
+            Self::Sym(value) => PredSetSym::Sym(value.clone()),
+        }
+    }
 }
 
+/// FollSets: Follow Sets 符号类型
 type FollowSets = HashMap<GramSym, HashSet<FollSetSym>>;
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum FollSetSym {
     Sym(String),
     EndMarker,
+}
+
+impl FollSetSym {
+    pub fn to_fst_set_sym(&self) -> Option<FstSetSym> {
+        match self {
+            Self::EndMarker => None,
+            Self::Sym(value) => Some(FstSetSym::Sym(value.clone())),
+        }
+    }
+
+    pub fn to_pred_set_sym(&self) -> PredSetSym {
+        match self {
+            Self::EndMarker => PredSetSym::EndMarker,
+            Self::Sym(value) => PredSetSym::Sym(value.clone()),
+        }
+    }
+}
+
+/// PredSetSym: 预测集符号
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+pub enum PredSetSym {
+    Sym(String),
+    Epsilon,
+    EndMarker
+}
+
+impl PredSetSym {
+    pub fn is_sym(&self) -> bool {
+        match self {
+            Self::Sym(_) => true,
+            _ => false
+        }
+    }
+}
+
+type PredLL1Sets = HashMap<PredSetSym, IndexSet<GramProd>>;
+
+
+/// Gram: 语法类型
+#[derive(Debug)]
+pub struct Gram {
+    name: String,
+    productions: IndexSet<GramProd>,
 }
 
 impl Gram {
@@ -111,6 +217,14 @@ impl Gram {
         self.productions.insert(prod);
     }
 
+    pub fn get_prod(&self, sym: &GramSym) -> Vec<GramProd> {
+        self.productions
+            .iter()
+            .filter(|(left_sym, _)| left_sym == sym)
+            .cloned()
+            .collect()
+    }
+
     pub fn nonterm_syms(&self) -> Vec<GramSym> {
         self.productions
             .clone()
@@ -119,13 +233,29 @@ impl Gram {
             .collect::<Vec<GramSym>>()
     }
 
+    pub fn term_syms(&self) -> Vec<GramSym> {
+        let mut term_syms = HashSet::<GramSym>::new();
+
+        for (_sym, str) in self.productions.iter() {
+            if let GramSymStr::Str(normal_str) = str {
+                for str_sym in normal_str.iter() {
+                    if str_sym.is_terminal() {
+                        term_syms.insert(str_sym.clone());
+                    }
+                }
+            }
+        }
+
+        term_syms.into_iter().collect()
+    }
+
     pub fn syms(&self) -> Vec<GramSym> {
         let mut all_syms = HashSet::<GramSym>::new();
 
         for (sym, str) in self.productions.iter() {
             all_syms.insert(sym.clone());
 
-            if let GramSymStr::Normal(normal_str) = str {
+            if let GramSymStr::Str(normal_str) = str {
                 all_syms.extend(normal_str.clone().into_iter());
             }
         }
@@ -139,6 +269,12 @@ impl Gram {
             Some((k, _v)) => Some(k),
             None => None,
         }
+    }
+
+    pub fn sym_has_epsilon(&self, sym: &GramSym) -> bool {
+        self.productions
+            .iter()
+            .any(|(x, str)| x == sym && *str == GramSymStr::Epsilon)
     }
 
     pub fn first_sets(&self) -> FirstSets {
@@ -205,6 +341,120 @@ impl Gram {
         }
         foll_sets
     }
+
+    pub fn prediction_ll1_sets(
+        &self,
+        first_sets: &FirstSets,
+        follow_sets: &FollowSets,
+    ) -> PredLL1Sets {
+        // 计算每个产生式的第一个Token的集合
+        let pred_table_vec: Vec<(GramProd, HashSet<PredSetSym>)>
+        = self
+            .productions
+            .iter()
+            .map(|(sym, symstr)| {
+                let term_set = match symstr {
+                    GramSymStr::Epsilon => follow_sets
+                        .get(&sym)
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.to_pred_set_sym())
+                        .collect(),
+                    GramSymStr::Str(normal_str_vec) => match normal_str_vec.get(0).unwrap() {
+                        GramSym::Terminal(value) => {
+                            hashset! { PredSetSym::Sym(value.clone()) }
+                        }
+                        GramSym::NonTerminal(_) => {
+                            let mut sub_term_set = hashset! {};
+                            let mut str_iter = normal_str_vec.iter();
+
+                            loop {
+                                let sub_sym;
+                                match str_iter.next() {
+                                    Some(_sym) => sub_sym = _sym,
+                                    None => {
+                                        break;
+                                    }
+                                }
+
+                                if sub_sym.is_nonterminal() {
+                                    sub_term_set.extend(
+                                        first_sets
+                                            .get(sub_sym)
+                                            .unwrap()
+                                            .iter()
+                                            .map(|fstsym| fstsym.to_pred_set_sym())
+                                    );
+
+                                    if !self.sym_has_epsilon(&sym) {
+                                        break;
+                                    }
+                                }
+
+                                sub_term_set.insert(sub_sym.to_pred_set_sym());
+                            }
+
+                            sub_term_set
+                        }
+                    },
+                };
+                ((sym.clone(), symstr.clone()), term_set)
+            })
+            .collect();
+
+        let epsilon_set = pred_table_vec
+            .iter()
+            .filter(
+                |((_, symstr), _term_set)|
+                symstr.is_epsilon()
+            )
+            .map(|(prod, _)| prod.clone())
+            .collect::<IndexSet<GramProd>>();
+
+        let endmark_set = pred_table_vec
+            .iter()
+            .filter(
+                |(_prod, term_set)|
+                term_set.contains(&PredSetSym::EndMarker)
+            )
+            .map(|(prod, _)| prod.clone())
+            .collect::<IndexSet<GramProd>>();
+
+        let mut res= self.term_syms()
+            .iter()
+            .map(|term_sym| {
+                let pred_sym = term_sym.to_pred_set_sym();
+
+                let symstr_set = pred_table_vec
+                    .iter()
+                    .filter(
+                        |((_, symstr), term_set)|
+                        symstr.is_normal()
+                        && term_set.contains(&pred_sym)
+                    )
+                    .map(|(prod, _)| prod.clone())
+                    .collect::<IndexSet<GramProd>>();
+
+                // check if there is duplicated items in GramProd set
+                #[cfg(debug_assertions)]
+                {
+                    let sym_vec: Vec<&GramSym>
+                    = symstr_set.iter().map(|(sym, _str)| sym).collect();
+
+                    let old_size = sym_vec.len();
+                    let new_size = sym_vec.clone().into_iter().unique().collect_vec().len();
+                    debug_assert_eq!(old_size, new_size, "sympred: {:#?}", (pred_sym, symstr_set));
+                }
+
+                (pred_sym, symstr_set)
+            })
+            .collect::<PredLL1Sets>();
+
+            res.extend_one((PredSetSym::Epsilon, epsilon_set));
+            res.extend_one((PredSetSym::EndMarker, endmark_set));
+
+            res
+    }
 }
 
 ///```none
@@ -217,8 +467,7 @@ impl Gram {
 fn _calc_first_sets_turn(
     productions: &IndexSet<GramProd>,
     first_sets: &mut HashMap<GramSym, HashSet<FstSetSym>>,
-) -> bool
-{
+) -> bool {
     let mut stable = true;
 
     for prod in productions.iter() {
@@ -232,7 +481,7 @@ fn _calc_first_sets_turn(
                 x_first_set.insert(FstSetSym::Epsilon);
             }
 
-            GramSymStr::Normal(normal_str) => {
+            GramSymStr::Str(normal_str) => {
                 match x {
                     GramSym::Terminal(_) => {
                         x_first_set.insert(FstSetSym::Sym(x.name().to_string()));
@@ -250,8 +499,7 @@ fn _calc_first_sets_turn(
                                 break;
                             }
 
-                            let cur_sym_first_set
-                                = first_sets.get(&cur_sym).unwrap();
+                            let cur_sym_first_set = first_sets.get(&cur_sym).unwrap();
                             x_first_set.extend(cur_sym_first_set.clone().into_iter());
 
                             if cur_sym_first_set.contains(&FstSetSym::Epsilon) {
@@ -290,8 +538,7 @@ fn _calc_follow_sets_turn(
     productions: &IndexSet<GramProd>,
     follow_sets: &mut FollowSets,
     first_sets: &FirstSets,
-) -> bool
-{
+) -> bool {
     let mut stable = true;
 
     for prod in productions.iter() {
@@ -326,7 +573,9 @@ fn _calc_follow_sets_turn(
                     );
 
                     // 没有epsilon转换就停止穿透
-                    if !next_first.iter().any(|x| x.is_epsilon()) { break }
+                    if !next_first.iter().any(|x| x.is_epsilon()) {
+                        break;
+                    }
                     j += 1;
                 }
                 // apply follow rule 3
@@ -405,6 +654,7 @@ macro_rules! use_epsilon {
 }
 
 /// 创建一个规则
+/// 第一个产生式默认是入口的根语法
 #[macro_export]
 macro_rules! grammar {
     [$gram_name:ident|
@@ -429,7 +679,7 @@ macro_rules! grammar {
                     let gramsymstr = if has_epsilon {
                         $crate::parser::GramSymStr::Epsilon
                      } else {
-                        $crate::parser::GramSymStr::Normal(gram_str_vec)
+                        $crate::parser::GramSymStr::Str(gram_str_vec)
                      };
 
                     _grammar.insert_prod(
@@ -502,9 +752,12 @@ macro_rules! Follow {
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Lexer
+
+/// Token
+#[derive(Debug, Clone)]
 pub struct Token {
     name: String,
-    value: String
+    value: String,
 }
 
 impl Token {
@@ -515,31 +768,96 @@ impl Token {
     pub fn value(&self) -> &str {
         &self.value
     }
+
+    pub fn to_fst_set_sym(&self) -> FstSetSym {
+        FstSetSym::Sym(self.name.clone())
+    }
+
+    /// To GramSym::Terminal
+    pub fn to_gram_sym(&self) -> GramSym {
+        GramSym::Terminal(self.name.clone())
+    }
+
+    pub fn to_pred_set_sym(&self) -> PredSetSym {
+        PredSetSym::Sym(self.name.clone())
+    }
 }
 
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.to_gram_sym(), self.value())
+    }
+}
+
+/// Lexer
+#[derive(Debug)]
 pub struct Lexer {
     pub name: String,
-    pub token_type_map: HashMap<String, PriRegexMatcher>,  // epsilon 不参与
+    pub tokens_map: HashMap<String, PriRegexMatcher>, // epsilon 不参与
 }
 
-
 impl Lexer {
+    pub fn new(name: &str, tokens: Vec<PriRegexMatcher>) -> Self {
+        let tokens_map = tokens
+            .into_iter()
+            .map(|x| (x.name().to_string(), x))
+            .collect();
+
+        let name = name.to_string();
+
+        Self { name, tokens_map }
+    }
+
     pub fn tokenize(&self, source: &str) -> Vec<Token> {
+        if source.len() == 0 {
+            return vec![];
+        }
+
         let mut tokens = vec![];
         let mut cache = String::new();
-        for c in source.chars() {
-            cache.push(c);
+        let source_chars: Vec<char> = source.chars().collect();
+        let mut i = 0;
+
+        while i < source_chars.len() {
+            cache.push(source_chars[i]);
 
             // turn round matcher to try match
-            for (token_type, matcher) in self.token_type_map.iter() {
-                if matcher.is_match(&cache) {
+            for (token_type, matcher) in self.tokens_map.iter() {
+                let mut j = i;
+                while j < source_chars.len() - 1 && matcher.is_match(cache.trim()) {
+                    j += 1;
+                    cache.push(source_chars[j]);
+                }
+
+                // 找到一个token匹配
+                if j > i {
+                    // 退回一个贪心多吞噬的字符
+                    if !matcher.is_match(cache.trim()) {
+                        j -= 1;
+                        cache.pop();
+                    }
+
                     tokens.push(Token {
                         name: token_type.clone(),
-                        value: cache
+                        value: cache.trim().to_string(),
                     });
-
                     cache = String::new();
+                    i = j;
+
+                    break;
                 }
+            }
+
+            i += 1;
+        }
+
+        // tail recycle
+        for (token_type, matcher) in self.tokens_map.iter() {
+            if matcher.is_match(cache.trim()) {
+                tokens.push(Token {
+                    name: token_type.clone(),
+                    value: cache.trim().to_string(),
+                });
             }
         }
 
@@ -547,8 +865,323 @@ impl Lexer {
     }
 }
 
+pub fn basic_lexer() -> Lexer {
+    let matchers = vec![
+        intlit_m(),
+        id_m(),
+        lparen_m(),
+        rparen_m(),
+        add_m(),
+        sub_m(),
+        mul_m(),
+        div_m(),
+    ];
+
+    Lexer::new("basic lexer", matchers)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/////// AST
+
+/// AST Node
+#[derive(Debug)]
+pub enum ASTNode {
+    Tree(Rc<RefCell<AST>>),
+    Leaf(Rc<Token>),
+}
+
+impl ASTNode {
+    pub fn dump(&self, f: &mut fmt::Formatter, padlevel: usize) -> fmt::Result {
+        let padding = "  ".repeat(padlevel);
+
+        match self {
+            Self::Leaf(token) => writeln!(f, "{}{}", padding, *token),
+            Self::Tree(ast) => {
+                let ast_ref = ast.as_ref().borrow();
+                ast_ref.dump(f, padlevel + 1)
+            }
+        }
+    }
+
+    pub fn get_token(&self) -> Option<&Rc<Token>> {
+        match self {
+            Self::Leaf(token) => Some(token),
+            _ => None
+        }
+    }
+
+    pub fn get_ast(&self) -> Option<&Rc<RefCell<AST>>> {
+        match self {
+            Self::Tree(ast) => Some(ast),
+            _ => None
+        }
+    }
+}
+
+/// AST
+#[derive(Debug)]
+pub struct AST {
+    /// AST's grammar type
+    sym: GramSym,
+    elems: IndexMap<GramSym, ASTNode>,
+}
+
+impl AST {
+    pub fn new(sym: &GramSym) -> Self {
+        Self {
+            sym: sym.clone(),
+            elems: indexmap! {},
+        }
+    }
+
+    pub fn sym(&self) -> &GramSym {
+        &self.sym
+    }
+
+    pub fn elem_syms(&self) -> Vec<GramSym> {
+        self.elems.keys().cloned().collect_vec()
+    }
+
+    pub fn get_elem(&self, sym: &GramSym) -> Option<&ASTNode> {
+        self.elems.get(sym)
+    }
+
+    pub fn insert_leaf(&mut self, token: Token) {
+        let leaf_name = token.to_gram_sym();
+        let leaf = ASTNode::Leaf(Rc::new(token));
+
+        self.elems.insert(leaf_name, leaf);
+    }
+
+    pub fn insert_tree(&mut self, tree: Rc<RefCell<AST>>) {
+        let tree_name = tree.as_ref().borrow().sym().clone();
+        let tree = ASTNode::Tree(tree);
+
+        self.elems.insert(tree_name, tree);
+    }
+
+    fn dump(&self, f: &mut fmt::Formatter, padlevel: usize) -> fmt::Result {
+        let padding = "  ".repeat(padlevel);
+
+        writeln!(f, "{}{}: ", padding, self.sym())?;
+
+        for (_elem_sym, elem_node) in self.elems.iter() {
+            elem_node.dump(f, padlevel + 1)?;
+        }
+
+        Ok(())
+    }
+}
+
+
+impl fmt::Display for AST {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.dump(f, 0)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/////// LL(1) Parser
+pub struct LL1Parser {
+    name: String,
+    gram: Gram,
+    lexer: Lexer,
+    prediction_sets: PredLL1Sets,
+}
+
+impl LL1Parser {
+    pub fn new(name: &str, gram: Gram, lexer: Lexer) -> Self {
+        let first_sets = gram.first_sets();
+        let follow_sets = gram.follow_sets(&first_sets);
+        let prediction_sets = gram.prediction_ll1_sets(&first_sets, &follow_sets);
+
+        Self {
+            name: name.to_string(),
+            gram,
+            lexer,
+            prediction_sets,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn get_pred_str(&self, predsym: &PredSetSym, leftsym_expcted: &GramSym) -> Option<GramSymStr> {
+        let prods_set;
+        match self.prediction_sets.get(predsym) {
+            Some(value) => prods_set = value,
+            None => {
+                return None;
+            }
+        };
+
+        let matched_symstr_vec = prods_set
+            .into_iter()
+            .filter(|(leftsym, _symstr)| leftsym == leftsym_expcted)
+            .map(|(_leftsym, symstr)| symstr)
+            .collect_vec();
+
+        if matched_symstr_vec.is_empty() {
+            None
+        } else {
+            Some(matched_symstr_vec[0].clone())
+        }
+    }
+
+    pub fn parse(&self, source: &str) -> Result<Rc<RefCell<AST>>, String> {
+        let tokens = self.lexer.tokenize(source);
+
+        println!("tokens: {:#?}\n", tokens);
+        println!("LL(1): ");
+        self._parse(&tokens)
+    }
+
+    /// Result: <ASTRoot, UnsupportedTokenType>
+    fn _parse(&self, tokens: &Vec<Token>) -> Result<Rc<RefCell<AST>>, String> {
+        debug_assert!(tokens.len() > 0);
+
+        let start_sym = self.gram.start_sym().unwrap();
+        let root = Rc::new(RefCell::new(AST::new(&start_sym)));
+
+        let tokenslen = tokens.len();
+        let tokenslastpos = tokenslen - 1;
+        let mut i = 0;
+        let mut states_stack = Vec::<(Rc<RefCell<AST>>, Stack<GramSym>)>::new();
+
+        // Check root， LL(1) 分支预测
+        if let Some(symstr)
+        = self.get_pred_str(&tokens[i].to_pred_set_sym(), root.as_ref().borrow().sym()) {
+            if let GramSymStr::Str(gramsym_vec) = symstr {
+                // gramsym_vec rev for stack
+                states_stack.push((root.clone(), Stack::from(gramsym_vec.clone())));
+            } else {
+                return Err("There are epsilon transition on root rule".to_string());
+            }
+        } else {
+            return Err(format!(
+                "Unexpected first(1) token: `{}` for root grammar",
+                tokens[i].name()
+            ));
+        }
+
+        while let Some((cur_ast, mut gramsyms_stack)) = states_stack.pop() {
+            println!(">>> `{} => ...{}`", cur_ast.as_ref().borrow().sym(), gramsyms_stack);
+
+            // 分支匹配，遇到终结符直接匹配，遇到非终结符就入栈回到起点
+            while let Some(right_sym) = gramsyms_stack.pop() {
+                if i > tokenslastpos {
+                    if let Some(_)
+                    = self.get_pred_str(&PredSetSym::EndMarker, &right_sym)
+                    {
+                        return Ok(root);
+                    } else {
+                        return Err(format!(
+                            "Unfinished production: {:?}",
+                            (
+                                cur_ast.as_ref().borrow().sym(),
+                                gramsyms_stack
+                            )
+                        ));
+                    }
+                }
+
+                if right_sym.is_terminal() {
+                    println!("? eat terminal: `{}`", right_sym);
+
+                    if right_sym == tokens[i].to_gram_sym() {
+                        cur_ast.as_ref().borrow_mut().insert_leaf(tokens[i].clone());
+
+                        // cosume a token
+                        println!("! eat token: {:?}", tokens[i]);
+                        i += 1;
+                    } else {
+                        return Err(format!(
+                            "Unmatched token{}, a {} expected",
+                            tokens[i],
+                            right_sym
+                        ));
+                    }
+                }
+                else {  // handle nonterminal
+                    // LL(1)的分支预测
+
+                    if let Some(pred_symstr)
+                    = self.get_pred_str(&tokens[i].to_pred_set_sym(), &right_sym)
+                    {
+                        println!(
+                            "??? `{}`: `{}`",
+                            right_sym, pred_symstr
+                        );
+
+                        if let GramSymStr::Str(gramsym_vec) = pred_symstr {
+                            let sub_sym_tree = Rc::new(RefCell::new(AST::new(&right_sym)));
+                            cur_ast
+                                .as_ref()
+                                .borrow_mut()
+                                .insert_tree(sub_sym_tree.clone());
+
+                            states_stack.push((cur_ast, gramsyms_stack));
+                            states_stack
+                                .push(
+                                    (sub_sym_tree, Stack::from(gramsym_vec.clone()))
+                                );
+
+                            break;
+                        }
+
+                        else {
+                            unreachable!()
+                        }
+                    }
+
+                    // 如果找不到符合条件的分支，就试一下right_sym是否存在epsilon转换
+                    else if let Some(_)
+                    = self.get_pred_str(&PredSetSym::Epsilon, &right_sym) {
+                        println!(
+                            "... skipp epsilon: `{}` (token: {})",
+                            right_sym,
+                            tokens[i]
+                        );
+                        // just skip epsilon
+                    }
+
+                    else {
+                        return Err(format!(
+                            "Unexpected first(1) token: `{}` for grammar: `{}`",
+                            tokens[i].name(), right_sym.name()
+                        ));
+                    }
+                }
+            }  // end while
+
+            println!();
+        }
+
+        if i < tokenslastpos {
+            return Err(format!(
+                "Tokens remains: `{:?}`",
+                tokens.get(i..tokenslen).unwrap()
+            ));
+        }
+
+        Ok(root)
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 /////// Unit Test
 
 #[cfg(test)]
-mod test {}
+mod test {
+    #[test]
+    fn test_basic_lexer() {
+        use super::basic_lexer;
+
+        let lexer = basic_lexer();
+        //println!("{:#?}", lexer);
+
+        //println!("{:#?}", lexer.tokenize(" 010+32*(52+6) "));
+        println!("{:#?}", lexer.tokenize(" \"I am\" in string\" "));
+    }
+}

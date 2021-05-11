@@ -14,7 +14,8 @@ unstringify = "0.1.1"
 #key-set = { git = "https://github.com/minghu6/rust-key-set", branch = "master" }
 key-set = { path = "../key-set" }
 indexmap = "1.6.*"
-
+itertools = "0.10.*"
+num = "0.4"
 
 [dependencies.proc_macros]
 package = "alg-parser-proc-macros"

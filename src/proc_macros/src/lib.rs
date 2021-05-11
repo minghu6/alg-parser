@@ -40,11 +40,11 @@ pub fn make_regex_node(input: TokenStream) -> TokenStream {
     })
 }
 
-// /// Just implies print --verbose
-// #[proc_macro_attribute]
-// pub fn verbose(_attr: TokenStream, item: TokenStream) -> TokenStream {
-//     item
-// }
+/// Just implies print --verbose
+#[proc_macro_attribute]
+pub fn verbose(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}
 
 #[cfg(test)]
 mod tests {

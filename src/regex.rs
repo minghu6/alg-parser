@@ -241,7 +241,7 @@ impl PartialEq for CharSet {
 /// GrammarNode: Simple Regex Node
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub enum GrammarNodeType {
+pub enum RegexNodeType {
     And,
     Or,
     Node,
@@ -251,7 +251,7 @@ pub enum GrammarNodeType {
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct RegexNode {
     pub childen: Vec<Box<RegexNode>>,
-    pub nodetype: GrammarNodeType,
+    pub nodetype: RegexNodeType,
     pub repeat_times: (usize, usize),
     pub chars: CharSet,
     pub name: Option<String>,
@@ -264,7 +264,7 @@ impl RegexNode {
     pub fn new() -> Self {
         Self {
             childen: Vec::new(),
-            nodetype: GrammarNodeType::Epsilon,
+            nodetype: RegexNodeType::Epsilon,
             repeat_times: (1, 1),
             chars: CharSet::new(),
             name: None,
@@ -273,7 +273,7 @@ impl RegexNode {
 
     pub fn from_charset(chars: CharSet) -> Self {
         let mut node = Self::new();
-        node.nodetype = GrammarNodeType::Node;
+        node.nodetype = RegexNodeType::Node;
         node.chars = chars;
 
         node
@@ -288,14 +288,14 @@ impl RegexNode {
 
     pub fn create_or_node() -> Self {
         let mut node = Self::new();
-        node.nodetype = GrammarNodeType::Or;
+        node.nodetype = RegexNodeType::Or;
 
         node
     }
 
     pub fn create_and_node() -> Self {
         let mut node = Self::new();
-        node.nodetype = GrammarNodeType::And;
+        node.nodetype = RegexNodeType::And;
 
         node
     }
@@ -320,7 +320,7 @@ impl RegexNode {
                 _ => "",
             });
         } else {
-            let delim = if self.nodetype == GrammarNodeType::And {
+            let delim = if self.nodetype == RegexNodeType::And {
                 ""
             } else {
                 " | "
@@ -875,7 +875,7 @@ fn _regex2nfa(
     let (mut begin_state, mut end_state);
 
     match node.nodetype {
-        GrammarNodeType::Or => {
+        RegexNodeType::Or => {
             // 构建新的开始和结束状态，用它们连每一个转移状态
             begin_state = Rc::new(RefCell::new(State::with_counter(counter)));
             end_state = Rc::new(RefCell::new(State::with_counter_accept(counter)));
@@ -895,7 +895,7 @@ fn _regex2nfa(
             }
         }
 
-        GrammarNodeType::And => {
+        RegexNodeType::And => {
             // 各个转移状态前后相连
             let sub_graphs: Vec<(Rc<RefCell<State>>, Rc<RefCell<State>>)> = node
                 .childen
@@ -915,7 +915,7 @@ fn _regex2nfa(
             }
         }
 
-        GrammarNodeType::Node => {
+        RegexNodeType::Node => {
             // 根据node的condition创建两个状态
             begin_state = Rc::new(RefCell::new(State::with_counter(counter)));
             end_state = Rc::new(RefCell::new(State::with_counter_accept(counter)));
@@ -1196,6 +1196,8 @@ pub fn match_with_dfa(state: &DFAState, input: &str) -> bool {
     #[cfg(debug_assertions)]
     println!("DFA matching: {} ", input);
 
+    if input.len() == 0 { return false }
+
     let chars_input: Vec<char> = input.chars().map(|x| x).collect();
 
     let matched = match _match_with_dfa(state, &chars_input[..], 0) {
@@ -1253,7 +1255,7 @@ pub fn ascii_charset() -> CharSet {
 }
 
 /// A Native Raw Primitive Regex Matcher
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PriRegexMatcher {
     name: String,
     state: Rc<RefCell<DFAState>>,
@@ -1358,12 +1360,12 @@ macro_rules! make_regex_and_matcher {
 make_regex_and_matcher!(int_r, int_m);
 make_regex_and_matcher!(if_r, if_m);
 make_regex_and_matcher!(else_r, else_m);
-make_regex_and_matcher!(add_r, add_m, "+", "'+'");
-make_regex_and_matcher!(sub_r, sub_m, "-", "'-'");
-make_regex_and_matcher!(mul_r, mul_m, "*", "'*'");
-make_regex_and_matcher!(div_r, div_m, "/", "'/'");
-make_regex_and_matcher!(lparen_r, lparen_m, "(", "'('");
-make_regex_and_matcher!(rparen_r, rparen_m, ")", "')'");
+make_regex_and_matcher!(add_r, add_m, "+", "add");
+make_regex_and_matcher!(sub_r, sub_m, "-", "sub");
+make_regex_and_matcher!(mul_r, mul_m, "*", "mul");
+make_regex_and_matcher!(div_r, div_m, "/", "div");
+make_regex_and_matcher!(lparen_r, lparen_m, ")", "rparen");
+make_regex_and_matcher!(rparen_r, rparen_m, "(", "lparen");
 
 
 /// Identity Regex
@@ -1383,16 +1385,18 @@ pub fn id_r() -> RegexNode {
 }
 
 pub fn intlit_r() -> RegexNode {
-    simple_regex!{ ["_a-zA-Z"]()["0-9a-zA-Z"]() }
+    simple_regex!{ ["0-9"](+) }
 }
 
-pub fn strlit_r() -> RegexNode {
-    simple_regex!{ [r#"""#](1)[" \t\n"](*)[r#"""#](1) }
-}
+// string should be impl by grammar for it has escape string
+// which is a little complicated for simple regex
+// pub fn strlit_r() -> RegexNode {
+//     simple_regex!{ [r#"""#](1)["\u{0}-\u{FF}"](*)[r#"""#](1) }
+// }
 
 make_matcher!(id_r => id_m);
 make_matcher!(intlit_r => intlit_m);
-make_matcher!(strlit_r => strlit_m);
+// make_matcher!(strlit_r => strlit_m);
 
 
 /// Int Regex
@@ -1402,8 +1406,6 @@ pub fn number_r() -> RegexNode {
 }
 
 make_matcher!(number_r => number_m);
-
-
 
 
 

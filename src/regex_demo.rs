@@ -1,8 +1,10 @@
+#![allow(dead_code)]
+
 use std::rc::Rc;
 
 use crate::utils::*;
 use crate::regex::*;
-use crate::{ charset, simple_regex };
+use crate::{ charset };
 
 /// writen in verbose format
 fn demo_regex_nfa_dfa() {
@@ -138,8 +140,14 @@ fn demo_regex_nfa_dfa() {
     display_sample_2();
 }
 
-fn basic_regex() {
 
-    simple_regex!{ ["a-zb-xc"](+) ["z"]() ["z"]() };
 
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_regex2nfa2dfa() {
+        use super::demo_regex_nfa_dfa;
+
+        demo_regex_nfa_dfa();
+    }
 }

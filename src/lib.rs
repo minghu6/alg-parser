@@ -5,6 +5,8 @@
 #![feature(concat_idents)]
 #![feature(stmt_expr_attributes)]
 #![feature(proc_macro_hygiene)]
+#![feature(extend_one)]
+#![feature(associated_type_bounds)]
 
 #![allow(mixed_script_confusables)]
 
@@ -17,7 +19,9 @@ extern crate proc_macros; /* to avoid a cargo bug when cross-compiling (e.g. was
 
 pub use proc_macros::{
     // make_regex_node
+    verbose
 };
+
 
 pub mod utils;
 pub mod regex;

@@ -1,6 +1,11 @@
 #![allow(non_snake_case)]
 #![allow(unused_variables)]
 
+use std::{cell::RefCell, str::FromStr};
+use std::rc::Rc;
+
+use num::{ BigRational, BigInt };
+
 use super::parser::*;
 use super::*; // require macro
 
@@ -31,7 +36,7 @@ use super::*; // require macro
 ///
 pub fn demo_grammar_ll_expression() {
     declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
-    declare_terminal! {Id, IntLit, LPAREN, RPAREN, sub, add, mul, div};
+    declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
     use_epsilon!(ε);
 
     let expression = grammar![expression|
@@ -45,9 +50,9 @@ pub fn demo_grammar_ll_expression() {
         | pri multiplier;
 
         pri:
-        | Id;
-        | IntLit;
-        | LPAREN sum RPAREN;
+        | id;
+        | intlit;
+        | lparen sum rparen;
 
         multiplier:
         | mul pri multiplier;
@@ -56,16 +61,159 @@ pub fn demo_grammar_ll_expression() {
 
         addend:
         | add sum;
-        | div sum;
+        | sub sum;
         | ε;
     |];
 
     let fst_sets = expression.first_sets();
     let foll_sets = expression.follow_sets(&fst_sets);
+    let pred_sets
+        = expression.prediction_ll1_sets(&fst_sets, &foll_sets);
 
-    println!("{:#?}", fst_sets);
-    println!("{:#?}", foll_sets);
+    // println!("{:#?}", fst_sets);
+    // println!("{:#?}", foll_sets);
+    // println!("{:#?}", pred_sets);
+
+    let parser = LL1Parser::new("expression", expression, basic_lexer());
+
+    match parser.parse(" (1+3 * 56) -4 /2 -3") {
+        Err(err) => println!("{}", err),
+        //_ => ()
+        Ok(ast) => println!("{}", ast.as_ref().borrow())
+    }
 }
+
+#[cfg(yes)]
+pub mod algebraic_expression {
+    use std::{cell::RefCell, str::FromStr};
+    use std::rc::Rc;
+
+    use num::{ BigRational, BigInt };
+
+    use crate::utils::Stack;
+    use super::*; // require macro
+
+
+    fn bigf0() -> BigRational {
+        BigRational::from_integer(bigint0())
+    }
+
+    fn bigf1() -> BigRational {
+        BigRational::from_integer(bigint1())
+    }
+
+    fn bigint1() -> BigInt {
+        BigInt::from(1)
+    }
+
+    fn bigint0() -> BigInt {
+        BigInt::from(0)
+    }
+
+    fn str2bf (s: &str) -> BigRational {
+        BigRational::new(BigInt::from_str(s).unwrap(), bigint1())
+    }
+
+    // sum:
+    // | product addend;
+    fn eval_sum (root: &Rc<RefCell<AST>>) -> BigRational {
+        declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
+        declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
+
+        let root_ref = root.as_ref().borrow();
+
+        let prod_value;
+        if let Some(prod_node) = root_ref.get_elem(&product) {
+            prod_value = eval_product(&prod_node.get_ast().unwrap())
+        } else {
+            prod_value = bigf0();
+        }
+
+        if let Some(addend_node) = root_ref.get_elem(&addend) {
+            prod_value + eval_addend(&addend_node)
+        } else {
+            prod_value
+        }
+    }
+
+    // product:
+    // | pri multiplier;
+    fn eval_product (root: &Rc<RefCell<AST>>) -> BigRational {
+        declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
+        declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
+
+        let root_ref = root.as_ref().borrow();
+
+        let pri_value;
+        if let Some(pri_node) = root_ref.get_elem(&pri) {
+            pri_value = eval_pri(&pri_node.get_ast().unwrap())
+        } else {
+            pri_value = bigf0();
+        }
+
+        if let Some(multiplier_node) = root_ref.get_elem(&multiplier) {
+            pri_value + eval_multiplier(&multiplier_node)
+        } else {
+            pri_value
+        }
+    }
+
+    // pri:
+    // | id;
+    // | intlit;
+    // | lparen sum rparen;
+    fn eval_pri (root: &Rc<RefCell<AST>>) -> BigRational {
+        declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
+        declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
+
+        let root_ref = root.as_ref().borrow();
+
+        if let Some(id_leaf) = root_ref.get_elem(&id) {
+            return str2bf(id_leaf.get_token().unwrap().as_ref().value())
+        } else if let Some(sum_node) = root_ref.get_elem(&sum) {
+            return eval_sum(&sum_node.get_ast().unwrap());
+        } else {
+            // handle id
+            unimplemented!()
+        }
+    }
+
+    // multiplier:
+    //   | (* | /) pri multiplier;
+    //   | ε;
+    // fn eval_multiplier(root: &Rc<RefCell<AST>>) -> Stack<(GramSym, BigRational)> {
+    //     declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
+    //     declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
+
+    //     let root_ref = root.as_ref().borrow();
+
+    //     let pri_node
+    //         = root_ref.get_elem(&pri).unwrap().get_ast().unwrap();
+    //     let pri_value = eval_pri(pri_node);
+
+    //     let op;
+    //     if let Some(_) = root_ref.get_elem(&mul) {
+    //         op = mul.clone();
+    //     } else {
+    //         op = div.clone();
+    //     }
+
+    //     let mut multiplier_stack
+    //         = stack![(op, pri_value)];
+
+    //     if let Some(v) = root_ref.get_elem(&multiplier) {
+    //         multiplier_stack = eval_multiplier(v.get_ast().unwrap());
+    //     }
+
+
+
+    //     if let Some(_) = root_ref.get_elem(&mul) {
+    //         return ;
+    //     } else if let Some()
+    // }
+
+}
+
 
 
 pub fn grammar_demo1() -> Gram {
@@ -159,14 +307,15 @@ pub fn grammar_demo3() -> Gram {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use crate::{First, Follow};
 
-    #[ignore]
     #[test]
     fn ll_expression_parser_works() {
-        // use super::ll_expression_parser;
+        use super::{demo_grammar_ll_expression};
 
-        // ll_expression_parser();
+        demo_grammar_ll_expression()
     }
 
     #[test]
@@ -207,6 +356,9 @@ mod test {
         }
 
         // println!("{:#?}", g1_follow_sets);
+        // let g1_pred_sets
+        //      = g1.prediction_ll1_sets(&g1_first_sets, &g1_follow_sets);
+        // println!("{:#?}", g1_pred_sets);
 
         ///////////////////////////////////////////////////////////////////////
         /////// G2 Grammar
@@ -262,5 +414,17 @@ mod test {
             debug_assert_eq!(g3_follow_sets.get(sym).unwrap(), follset);
         }
 
+    }
+
+    #[test]
+    fn test_bigint_rational_basic_op() {
+        use num::{ BigRational, BigInt };
+
+        let a = BigInt::from_str("100000000000000000000000000002").unwrap();
+        let b = BigInt::from_str("20000000000000000000000000000").unwrap();
+        let c: BigRational = BigRational::new(a.clone(), b.clone());
+        let d: BigRational = BigRational::new(a, BigInt::from(1));
+
+        println!("{}", (c + d).round());
     }
 }
