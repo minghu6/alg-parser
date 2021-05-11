@@ -19,8 +19,10 @@ extern crate proc_macros; /* to avoid a cargo bug when cross-compiling (e.g. was
 
 pub use proc_macros::{
     // make_regex_node
-    verbose
+    make_vec_macro_rules
 };
+
+make_vec_macro_rules!(vecdeq , std::collections::VecDeque, push_back);
 
 
 pub mod utils;

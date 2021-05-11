@@ -8,6 +8,7 @@ use std::{
     vec
 };
 
+use crate::make_vec_macro_rules;
 
 pub type CounterType = impl FnMut() -> usize;
 
@@ -251,8 +252,16 @@ macro_rules! stack {
 }
 
 
+////////////////////////////////////////////////////////////////////////////////
+/////// Meta Macro Tools
+
+
+
+
 #[cfg(test)]
 mod test {
+    use crate::*;
+
     #[test]
     fn test_counter() {
         use super::{_gen_counter, gen_counter};
@@ -310,5 +319,13 @@ mod test {
         assert_eq!(stack.to_vec(), vec![5, 4, 3, 2, 1]);
 
         println!("{:?}", stack);
+    }
+
+    #[test]
+    fn test_vec_like_macro_rules() {
+        let queue = vecdeq![1, 2];
+
+        println!("{:?}", queue);
+
     }
 }

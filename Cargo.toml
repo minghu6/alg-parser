@@ -24,3 +24,6 @@ version = "0.1.0"  # Same as main
 
 [workspace]
 members = ["src/proc_macros"]
+
+[features]
+yes=[]

@@ -1,50 +1,67 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
+use proc_macro2::{ Span };
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{Ident, LitStr, Token, parse_macro_input};
+use syn::{Ident, LitStr, Token, parse_macro_input, Path};
 use quote::{quote, format_ident};
 
 
-struct LitDef {
+////////////////////////////////////////////////////////////////////////////////
+/////// Meta Macro Tools
+
+struct VecMacroRules {
     name: Ident,
-    value: LitStr
+    path: Path,
+    inc_op: Ident
 }
 
-impl Parse for LitDef {
+impl Parse for VecMacroRules {
     fn parse(input: ParseStream) -> Result<Self> {
         let name: Ident = input.parse()?;
-        input.parse::<Token![=>]>()?;
-        let value: LitStr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let path: Path = input.parse()?;
 
-        Ok(LitDef {
+        let inc_op;
+        if let Ok(_) = input.parse::<Token![,]>() {
+            inc_op = input.parse()?;
+        } else {
+            inc_op = Ident::new("insert", Span::call_site());
+        }
+
+        Ok(Self {
             name,
-            value
+            path,
+            inc_op
         })
     }
 }
 
-/// 循环依赖，只是作为一个废弃示例
 #[proc_macro]
-pub fn make_regex_node(input: TokenStream) -> TokenStream {
-    let LitDef {
+pub fn make_vec_macro_rules(input: TokenStream) -> TokenStream {
+    let VecMacroRules {
         name,
-        value
-    } = parse_macro_input!(input as LitDef);
-
-    let defined_regex_name =  format_ident!("{}", name.to_string() + "_r");
+        path,
+        inc_op
+    } = parse_macro_input!(input as VecMacroRules);
 
     TokenStream::from(quote! {
-        pub fn #defined_regex_name() -> ::alg_parser::regex::RegexNode {
-            ::alg_parser::regex::lit_regex_node(#value)
+        #[macro_export]
+        macro_rules! #name {
+            ( $($value:expr),* ) => {
+                {
+                    let mut vec_like = #path::new();
+
+                    $(
+                        vec_like.#inc_op($value);
+                    )*
+
+                    vec_like
+                }
+            };
         }
     })
 }
 
-/// Just implies print --verbose
-#[proc_macro_attribute]
-pub fn verbose(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
-}
 
 #[cfg(test)]
 mod tests {
