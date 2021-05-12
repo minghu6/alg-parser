@@ -40,6 +40,7 @@ pub fn demo_grammar_ll_expression() {
     declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
     use_epsilon!(ε);
 
+    // 优先级没有左递归根本就不行
     let expression = grammar![expression|
         expression:
         | sum;
@@ -69,7 +70,7 @@ pub fn demo_grammar_ll_expression() {
     let fst_sets = expression.first_sets();
     let foll_sets = expression.follow_sets(&fst_sets);
     let pred_sets
-        = expression.prediction_ll1_sets(&fst_sets, &foll_sets);
+        = expression.prediction_sets(&fst_sets, &foll_sets);
 
     // println!("{:#?}", fst_sets);
     // println!("{:#?}", foll_sets);
@@ -77,7 +78,7 @@ pub fn demo_grammar_ll_expression() {
 
     let parser = LL1Parser::new("expression", expression, basic_lexer());
 
-    match parser.parse(" (1+3 * 56) - 4/ 2 +3") {
+    match parser.parse(" ((1+3 * 56) - 4/ 2) +3") {
         Err(err) => println!("{}", err),
         //_ => ()
         Ok(ast) => {

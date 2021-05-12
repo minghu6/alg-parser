@@ -157,9 +157,17 @@ impl <T> Stack<T> {
         self._value_vec.len() == 0
     }
 
-    pub fn iter(&self) -> StackIter<T> {
+    /// FILO
+    pub fn stack_iter(&self) -> StackIter<T> {
         StackIter {
             iter: self._value_vec.iter().rev()
+        }
+    }
+
+    /// FIFO
+    pub fn queue_iter(&self) -> QueueIter<T> {
+        QueueIter {
+            iter: self._value_vec.iter()
         }
     }
 
@@ -234,7 +242,18 @@ impl <T> Iterator for StackIter<'a, T> {
     }
 }
 
+/// QueueIter
+pub struct QueueIter<'a, T> {
+    iter: std::slice::Iter<'a, T>
+}
 
+impl <T> Iterator for QueueIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
 
 #[macro_export]
 macro_rules! stack {
