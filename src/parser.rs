@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt, rc::{Rc}};
 
 use indexmap::{indexmap, indexset, IndexMap, IndexSet};
 use itertools::Itertools;
@@ -133,7 +133,7 @@ pub enum FstSetSym {
     Epsilon,
 }
 
-/// FstSetSym: First Sets 符号类型
+// FstSetSym: First Sets 符号类型
 impl FstSetSym {
     pub fn is_epsilon(&self) -> bool {
         match self {
@@ -593,13 +593,12 @@ fn _calc_follow_sets_turn(
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Grammar DSL
-/// Grammar DSL
-/// 效果差强人意，代价大概是
-/// ```
-/// #![allow(non_snake_case)]
-/// #![allow(unused_variables)]
-///```
-///////
+/////// 效果差强人意，代价大概是
+/////// ```
+/////// #![allow(non_snake_case)]
+/////// #![allow(unused_variables)]
+///////```
+
 
 pub struct Sym {}
 
@@ -873,16 +872,6 @@ pub fn basic_lexer() -> Lexer {
 /////// AST
 
 
-/// AST Node Mata
-pub struct ASTNodeMeta {
-    parent: Weak<RefCell<AST>>,
-    path: Vec<GramSym>
-}
-
-impl ASTNodeMeta {
-
-}
-
 /// AST Node
 #[derive(Debug)]
 pub enum ASTNode {
@@ -1004,8 +993,22 @@ impl fmt::Display for AST {
     }
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
-/////// 带回溯的 变形 LL(1) Parser， 因为纯LL(1) 语法太蹩脚了
+/////// Parser Trait
+pub trait Parser {
+    fn parse(&self, source: &str) -> Result<Rc<RefCell<AST>>, String>;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/////// Evaluator Trait
+pub trait Evaluator<RES> {
+    fn eval(&self, ast: &Rc<RefCell<AST>>) -> Result<RES, String>;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+/////// 带回溯的 变形 LL(1) Parser
 pub struct LL1Parser {
     name: String,
     gram: Gram,
@@ -1054,8 +1057,11 @@ impl LL1Parser {
             Some(matched_symstr_vec)
         }
     }
+}
 
-    pub fn parse(&self, source: &str) -> Result<Rc<RefCell<AST>>, String> {
+// Impl for Parser
+impl Parser for LL1Parser {
+    fn parse(&self, source: &str) -> Result<Rc<RefCell<AST>>, String> {
         let tokens = self.lexer.tokenize(source);
         if tokens.is_empty() {
             return Err("empty tokens".to_string());
@@ -1091,7 +1097,7 @@ impl LL1Parser {
                         (root.clone(), Stack::from(gramsym_vec.clone()))
                     ];
 
-                    if let Ok(_res) = self._parse(&tokens[..], states_stack) {
+                    if let Ok(_res) = _ll1_parse(&self, &tokens[..], states_stack) {
                         res = Ok(_res);
                         break;
                     }
@@ -1101,179 +1107,181 @@ impl LL1Parser {
 
         res
     }
-
-    /// Result: <ASTRoot, UnsupportedTokenType>
-    fn _parse(
-        &self,
-        tokens: &[Token],
-        mut states_stack: LL1ParseStatesStack
-    ) -> Result<Rc<RefCell<AST>>, String> {
-        if tokens.is_empty() {
-            return Err("empty tokens".to_string());
-        }
-
-        debug_assert!(
-            !states_stack.is_empty(),
-            "states stack should keep filled by invoker"
-        );
-
-        let root = states_stack[0].0.clone();
-        let tokenslen = tokens.len();
-        let tokenslastpos = tokenslen - 1;
-        let mut i = 0;
-
-        while let Some((cur_ast, mut symstr_stack)) = states_stack.pop() {
-            println!(">>> `{} => ...{}`", cur_ast.as_ref().borrow().sym(), symstr_stack);
-
-            // 分支匹配，遇到终结符直接匹配，遇到非终结符就入栈回到起点
-            while let Some(right_sym) = symstr_stack.pop() {
-                if i > tokenslastpos {
-                    if let Some(_)  // 检查当前产生式是否允许结束
-                    = self.get_pred_str(&PredSetSym::EndMarker, &right_sym)
-                    {
-                        return Ok(root);
-                    } else {
-                        return Err(format!(
-                            "Unfinished production: {:?}",
-                            (
-                                cur_ast.as_ref().borrow().sym(),
-                                symstr_stack
-                            )
-                        ));
-                    }
-                }
-
-                if right_sym.is_terminal() {
-                    println!("? eat terminal: `{}`", right_sym);
-
-                    if right_sym == tokens[i].to_gram_sym() {
-                        cur_ast.as_ref().borrow_mut().insert_leaf(tokens[i].clone());
-
-                        // cosume a token
-                        println!("! eat token: {:?}", tokens[i]);
-                        i += 1;
-                    } else {
-                        return Err(format!(
-                            "Unmatched token{}, a {} expected",
-                            tokens[i],
-                            right_sym
-                        ));
-                    }
-                }
-                else {  // handle nonterminal
-                    // LL(1)的带回溯的分支预测
-                    // case-1 (just goon)
-                    // case-2 (push, loop continue)
-                    // case-3 (return res<ok/error>)
-                    // case-4 (error)
-
-                    if let Some(poss_brs)
-                    = self.get_pred_str(&tokens[i].to_pred_set_sym(), &right_sym)
-                    {
-                        let sub_sym_tree = Rc::new(RefCell::new(AST::new(&right_sym)));
-                        cur_ast
-                            .as_ref()
-                            .borrow_mut()
-                            .insert_tree(sub_sym_tree.clone());
-                        states_stack.push((cur_ast.clone(), symstr_stack.clone()));
-
-                        // case-1
-                        // 正经的LL(1) 匹配
-                        if poss_brs.len() == 1 {
-                            let pred_symstr = poss_brs[0];
-                            // 在计算predsets时已经把epsilon str的情况单独提出来了
-                            let norm_sym_vec = pred_symstr.get_normal().unwrap();
-
-                            println!(
-                                "?>! `{}`: `{}`",
-                                right_sym, GramSymStr::Str(norm_sym_vec.clone())
-                            );
-
-                            states_stack.push(
-                                    (sub_sym_tree, Stack::from(norm_sym_vec.clone()))
-                            );
-
-                            break;
-                        }
-
-                        // case-2, 需要实现树的复制
-                        // 回溯的LL(1) 匹配
-                        // else， 前面必定返回，所以不必加额外的else block来消耗宝贵的缩进资源
-                        let mut poss_brs_iter = poss_brs.into_iter();
-
-                        while let Some(pred_symstr) = poss_brs_iter.next() {
-                            let norm_sym_vec = pred_symstr.get_normal().unwrap();
-
-                            println!(
-                                "?>? `{}`: `{}`",
-                                right_sym, GramSymStr::Str(norm_sym_vec.clone())
-                            );
-
-                            states_stack.push(
-                                (sub_sym_tree.clone(), Stack::from(norm_sym_vec.clone()))
-                            );
-                            // 实际上是拷贝了整个树
-                            let new_states_stack
-                                = _copy_states_stack(&states_stack);
-
-                            let (_, new_tokens) = tokens.split_at(i);
-
-                            // right_sym 完成匹配
-                            if let Ok(_res)
-                                = self._parse(new_tokens, new_states_stack) {
-
-                                return Ok(_res);
-                            }
-
-                            // clean env
-                            states_stack.pop();
-                        }
-
-                        return Err(format!(
-                            "All possible branch has been failed for grammar: `{}`",
-                            right_sym
-                        ));
-                    }
-
-                    // case-3
-                    // 如果找不到符合条件的分支，就试一下right_sym是否存在epsilon转换
-                    else if let Some(_)
-                    = self.get_pred_str(&PredSetSym::Epsilon, &right_sym) {
-                        println!(
-                            "... skipp epsilon: `{}` (token: {})",
-                            right_sym,
-                            tokens[i]
-                        );
-                        // just skip epsilon
-                    }
-
-                    // case-4
-                    else {
-                        return Err(format!(
-                            "Unexpected token: `{}` for grammar: `{}`",
-                            tokens[i], right_sym
-                        ));
-                    }
-
-
-                }
-            }  // end while
-
-            println!();
-        }
-
-        if i < tokenslastpos {
-            return Err(format!(
-                "Tokens remains: `{:?}`",
-                tokens.get(i..tokenslen).unwrap()
-            ));
-        }
-
-        Ok(root)
-    }
 }
 
-fn _copy_states_stack(states_stack: &LL1ParseStatesStack) -> LL1ParseStatesStack
+
+/// Result: <ASTRoot, UnsupportedTokenType>
+fn _ll1_parse(
+    parser: &LL1Parser,
+    tokens: &[Token],
+    mut states_stack: LL1ParseStatesStack
+) -> Result<Rc<RefCell<AST>>, String> {
+    if tokens.is_empty() {
+        return Err("empty tokens".to_string());
+    }
+
+    debug_assert!(
+        !states_stack.is_empty(),
+        "states stack should keep filled by invoker"
+    );
+
+    let root = states_stack[0].0.clone();
+    let tokenslen = tokens.len();
+    let tokenslastpos = tokenslen - 1;
+    let mut i = 0;
+
+    while let Some((cur_ast, mut symstr_stack)) = states_stack.pop() {
+        println!(">>> `{} => ...{}`", cur_ast.as_ref().borrow().sym(), symstr_stack);
+
+        // 分支匹配，遇到终结符直接匹配，遇到非终结符就入栈回到起点
+        while let Some(right_sym) = symstr_stack.pop() {
+            if i > tokenslastpos {
+                if let Some(_)  // 检查当前产生式是否允许结束
+                = parser.get_pred_str(&PredSetSym::EndMarker, &right_sym)
+                {
+                    return Ok(root);
+                } else {
+                    return Err(format!(
+                        "Unfinished production: {:?}",
+                        (
+                            cur_ast.as_ref().borrow().sym(),
+                            symstr_stack
+                        )
+                    ));
+                }
+            }
+
+            if right_sym.is_terminal() {
+                println!("? eat terminal: `{}`", right_sym);
+
+                if right_sym == tokens[i].to_gram_sym() {
+                    cur_ast.as_ref().borrow_mut().insert_leaf(tokens[i].clone());
+
+                    // cosume a token
+                    println!("! eat token: {:?}", tokens[i]);
+                    i += 1;
+                } else {
+                    return Err(format!(
+                        "Unmatched token{}, a {} expected",
+                        tokens[i],
+                        right_sym
+                    ));
+                }
+            }
+            else {  // handle nonterminal
+                // LL(1)的带回溯的分支预测
+                // case-1 (just goon)
+                // case-2 (push, loop continue)
+                // case-3 (return res<ok/error>)
+                // case-4 (error)
+
+                if let Some(poss_brs)
+                = parser.get_pred_str(&tokens[i].to_pred_set_sym(), &right_sym)
+                {
+                    let sub_sym_tree = Rc::new(RefCell::new(AST::new(&right_sym)));
+                    cur_ast
+                        .as_ref()
+                        .borrow_mut()
+                        .insert_tree(sub_sym_tree.clone());
+                    states_stack.push((cur_ast.clone(), symstr_stack.clone()));
+
+                    // case-1
+                    // 正经的LL(1) 匹配
+                    if poss_brs.len() == 1 {
+                        let pred_symstr = poss_brs[0];
+                        // 在计算predsets时已经把epsilon str的情况单独提出来了
+                        let norm_sym_vec = pred_symstr.get_normal().unwrap();
+
+                        println!(
+                            "?>! `{}`: `{}`",
+                            right_sym, GramSymStr::Str(norm_sym_vec.clone())
+                        );
+
+                        states_stack.push(
+                                (sub_sym_tree, Stack::from(norm_sym_vec.clone()))
+                        );
+
+                        break;
+                    }
+
+                    // case-2, 需要实现树的复制
+                    // 回溯的LL(1) 匹配
+                    // else， 前面必定返回，所以不必加额外的else block来消耗宝贵的缩进资源
+                    let mut poss_brs_iter = poss_brs.into_iter();
+
+                    while let Some(pred_symstr) = poss_brs_iter.next() {
+                        let norm_sym_vec = pred_symstr.get_normal().unwrap();
+
+                        println!(
+                            "?>? `{}`: `{}`",
+                            right_sym, GramSymStr::Str(norm_sym_vec.clone())
+                        );
+
+                        states_stack.push(
+                            (sub_sym_tree.clone(), Stack::from(norm_sym_vec.clone()))
+                        );
+                        // 实际上是拷贝了整个树
+                        let new_states_stack
+                            = _copy_ll1_states_stack(&states_stack);
+
+                        let (_, new_tokens) = tokens.split_at(i);
+
+                        // right_sym 完成匹配
+                        if let Ok(_res)
+                            = _ll1_parse(parser, new_tokens, new_states_stack) {
+
+                            return Ok(_res);
+                        }
+
+                        // clean env
+                        states_stack.pop();
+                    }
+
+                    return Err(format!(
+                        "All possible branch has been failed for grammar: `{}`",
+                        right_sym
+                    ));
+                }
+
+                // case-3
+                // 如果找不到符合条件的分支，就试一下right_sym是否存在epsilon转换
+                else if let Some(_)
+                = parser.get_pred_str(&PredSetSym::Epsilon, &right_sym) {
+                    println!(
+                        "... skipp epsilon: `{}` (token: {})",
+                        right_sym,
+                        tokens[i]
+                    );
+                    // just skip epsilon
+                }
+
+                // case-4
+                else {
+                    return Err(format!(
+                        "Unexpected token: `{}` for grammar: `{}`",
+                        tokens[i], right_sym
+                    ));
+                }
+
+
+            }
+        }  // end while
+
+        println!();
+    }
+
+    if i < tokenslastpos {
+        return Err(format!(
+            "Tokens remains: `{:?}`",
+            tokens.get(i..tokenslen).unwrap()
+        ));
+    }
+
+    Ok(root)
+}
+
+
+fn _copy_ll1_states_stack(states_stack: &LL1ParseStatesStack) -> LL1ParseStatesStack
 {
     if states_stack.is_empty() { return vec![] }
 

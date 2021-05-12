@@ -1,14 +1,13 @@
 #![allow(non_snake_case)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, str::FromStr};
-use std::rc::Rc;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc, str::FromStr};
 
-use num::{ BigRational, BigInt };
-
+use num::{BigInt, BigRational};
 
 use super::parser::*;
 use super::*; // require macro
+
 
 /// 一个简单四则运算的语法，为了支持LL(1)的文法，消除了左递归
 /// ```antlr
@@ -35,16 +34,14 @@ use super::*; // require macro
 ///   | ε;
 /// ```
 ///
-pub fn demo_grammar_ll_expression() {
+pub fn demo_grammar_ll_algb_sum()
+-> (impl Parser, impl Evaluator<BigRational>)
+{
     declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
     declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
     use_epsilon!(ε);
 
-    // 优先级没有左递归根本就不行
-    let expression = grammar![expression|
-        expression:
-        | sum;
-
+    let sum = grammar![sum|
         sum:
         | product addend;
 
@@ -62,46 +59,20 @@ pub fn demo_grammar_ll_expression() {
         | ε;
 
         addend:
-        | add sum;
-        | sub sum;
+        | add product addend;
+        | sub product addend;
         | ε;
     |];
 
-    let fst_sets = expression.first_sets();
-    let foll_sets = expression.follow_sets(&fst_sets);
-    let pred_sets
-        = expression.prediction_sets(&fst_sets, &foll_sets);
+    let fst_sets = sum.first_sets();
+    let foll_sets = sum.follow_sets(&fst_sets);
+    let pred_sets = sum.prediction_sets(&fst_sets, &foll_sets);
 
     // println!("{:#?}", fst_sets);
     // println!("{:#?}", foll_sets);
     // println!("{:#?}", pred_sets);
 
-    let parser = LL1Parser::new("expression", expression, basic_lexer());
-
-    match parser.parse(" ((1+3 * 56) - 4/ 2) +3") {
-        Err(err) => println!("{}", err),
-        //_ => ()
-        Ok(ast) => {
-            println!("{}", ast.as_ref().borrow());
-            use super::parser_demo::algebraic_expression::AlgExprEval;
-
-            println!("eval result: {}", AlgExprEval::eval(&ast).unwrap());
-        }
-    }
-}
-
-pub trait Evaluator<RES> {
-    fn eval(ast: &Rc<RefCell<AST>>) -> Result<RES, ()>;
-}
-
-pub mod algebraic_expression {
-    use std::{cell::RefCell, collections::VecDeque, str::FromStr};
-    use std::rc::Rc;
-
-    use num::{ BigRational, BigInt };
-
-    use super::*; // require macro
-
+    let parser = LL1Parser::new("sum", sum, basic_lexer());
 
     fn bigf0() -> BigRational {
         BigRational::from_integer(bigint0())
@@ -115,43 +86,27 @@ pub mod algebraic_expression {
         BigInt::from(0)
     }
 
-    fn str2bf (s: &str) -> BigRational {
+    fn str2bf(s: &str) -> BigRational {
         BigRational::new(BigInt::from_str(s).unwrap(), bigint1())
     }
 
-    pub struct AlgExprEval {
-    }
+    pub struct AlgSumEval {}
 
-    impl Evaluator<BigRational> for AlgExprEval {
-        fn eval(ast: &Rc<RefCell<AST>>) -> Result<BigRational, ()> {
-            eval_expression(ast)
-        }
-    }
-
-    pub fn eval_expression(root: &Rc<RefCell<AST>>) -> Result<BigRational, ()> {
-        declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
-        declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
-
-        let root_ref = root.as_ref().borrow();
-
-        if let Some(sum_node) = root_ref.get_elem(&sum) {
-            Ok(
-                eval_sum(&sum_node.get_ast().unwrap())
-            )
-        } else {
-            Err(())
+    impl Evaluator<BigRational> for AlgSumEval {
+        fn eval(&self, ast: &Rc<RefCell<AST>>) -> Result<BigRational, String> {
+            Ok(eval_sum(ast))
         }
     }
 
     // sum:
     // | product addend;
-    fn eval_sum (root: &Rc<RefCell<AST>>) -> BigRational {
+    fn eval_sum(root: &Rc<RefCell<AST>>) -> BigRational {
         declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
         declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
 
         let root_ref = root.as_ref().borrow();
 
-        let prod_value;
+        let mut prod_value;
         if let Some(prod_node) = root_ref.get_elem(&product) {
             prod_value = eval_product(&prod_node.get_ast().unwrap())
         } else {
@@ -159,20 +114,21 @@ pub mod algebraic_expression {
         }
 
         if let Some(addend_node) = root_ref.get_elem(&addend) {
-            let (sym, ratio) = eval_addend(&addend_node.get_ast().unwrap());
-            if sym == add {
-                prod_value + ratio
-            } else {
-                prod_value - ratio
+            for (sym, ratio) in eval_addend(&addend_node.get_ast().unwrap()).into_iter() {
+                if sym == add {
+                    prod_value += ratio
+                } else {
+                    prod_value -= ratio
+                }
             }
-        } else {
-            prod_value
         }
+
+        prod_value
     }
 
     // product:
     // | pri multiplier;
-    fn eval_product (root: &Rc<RefCell<AST>>) -> BigRational {
+    fn eval_product(root: &Rc<RefCell<AST>>) -> BigRational {
         declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
         declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
 
@@ -182,8 +138,7 @@ pub mod algebraic_expression {
         let pri_value = eval_pri(&pri_node.get_ast().unwrap());
 
         if let Some(multiplier_node) = root_ref.get_elem(&multiplier) {
-            let multiplier_deq
-                = eval_multiplier(&multiplier_node.get_ast().unwrap());
+            let multiplier_deq = eval_multiplier(&multiplier_node.get_ast().unwrap());
 
             let mut acc = pri_value;
             for (sym, ratio) in multiplier_deq.into_iter() {
@@ -204,14 +159,14 @@ pub mod algebraic_expression {
     // | id;
     // | intlit;
     // | lparen sum rparen;
-    fn eval_pri (root: &Rc<RefCell<AST>>) -> BigRational {
+    fn eval_pri(root: &Rc<RefCell<AST>>) -> BigRational {
         declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
         declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
 
         let root_ref = root.as_ref().borrow();
 
         if let Some(int_leaf) = root_ref.get_elem(&intlit) {
-            return str2bf(int_leaf.get_token().unwrap().as_ref().value())
+            return str2bf(int_leaf.get_token().unwrap().as_ref().value());
         } else if let Some(sum_node) = root_ref.get_elem(&sum) {
             return eval_sum(&sum_node.get_ast().unwrap());
         } else {
@@ -230,8 +185,7 @@ pub mod algebraic_expression {
 
         let root_ref = root.as_ref().borrow();
 
-        let pri_node
-            = root_ref.get_elem(&pri).unwrap().get_ast().unwrap();
+        let pri_node = root_ref.get_elem(&pri).unwrap().get_ast().unwrap();
         let pri_value = eval_pri(pri_node);
 
         let op;
@@ -241,22 +195,22 @@ pub mod algebraic_expression {
             op = div.clone();
         }
 
-        let mut multiplier_queue
-             = vecdeq![(op, pri_value)];
+        let mut multiplier_queue = vecdeq![(op, pri_value)];
 
         if let Some(v) = root_ref.get_elem(&multiplier) {
-            multiplier_queue.extend(
-                eval_multiplier(v.get_ast().unwrap())
-            );
+            multiplier_queue.extend(eval_multiplier(v.get_ast().unwrap()));
         }
 
         multiplier_queue
     }
 
-    // addend:
-    // | (+ | -) sum;
-    // | ε;
-    fn eval_addend(root: &Rc<RefCell<AST>>) -> (GramSym, BigRational) {
+    /*
+      addend:
+        | add product addend;
+        | sub product addend;
+        | ε;
+    */
+    fn eval_addend(root: &Rc<RefCell<AST>>) -> VecDeque<(GramSym, BigRational)> {
         declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
         declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
 
@@ -269,14 +223,35 @@ pub mod algebraic_expression {
             op = sub.clone();
         }
 
-        let sum_node = root_ref.get_elem(&sum).unwrap();
-        let sum_value = eval_sum(&sum_node.get_ast().unwrap());
+        let prod_node = root_ref.get_elem(&product).unwrap();
+        let prod_value = eval_product(&prod_node.get_ast().unwrap());
 
-        (op, sum_value)
+        match root_ref.get_elem(&addend) {
+            Some(addend_node) => {
+                let mut acc_deq = eval_addend(addend_node.get_ast().unwrap());
+                acc_deq.push_front((op, prod_value));
+                acc_deq
+            },
+            None => {
+                vecdeq![(op, prod_value)]
+            }
+        }
     }
+
+    (parser, AlgSumEval{})
 }
 
+// An Interestiong Function export to other project
+pub fn parse_algb_ratio(strlit: &str) -> Result<BigRational, String> {
+    let (parser, evalor) = demo_grammar_ll_algb_sum();
 
+    match parser.parse(strlit) {
+        Err(err) => Err(err),
+        Ok(ast) => {
+            evalor.eval(&ast)
+        }
+    }
+}
 
 pub fn grammar_demo1() -> Gram {
     declare_nonterminal!(E);
@@ -369,19 +344,37 @@ pub fn grammar_demo3() -> Gram {
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-
-    use crate::{First, Follow};
+    use num::{BigInt, BigRational, FromPrimitive};
 
     #[test]
     fn ll_expression_parser_works() {
-        use super::{demo_grammar_ll_expression};
+        use crate::parser_demo::{
+            demo_grammar_ll_algb_sum,
+            parse_algb_ratio
+        };
+        use super::parser::{ Evaluator, Parser };
 
-        demo_grammar_ll_expression()
+        let (parser, evalor) = demo_grammar_ll_algb_sum();
+
+        match parser.parse(" (1+3 * 56) - 4/ 2 +3") {
+            Err(err) => println!("{}", err),
+            //_ => ()
+            Ok(ast) => {
+                println!("{}", ast.as_ref().borrow());
+
+                println!("eval result: {}", evalor.eval(&ast).unwrap());
+            }
+        }
+
+        assert_eq!(
+            parse_algb_ratio(" 7 * 3 -2").unwrap(),
+            BigRational::from_integer(BigInt::from_i32(19).unwrap())
+        );
     }
 
     #[test]
     fn test_grammar_first_follow_set() {
+        use crate::{ First, Follow };
         use super::{grammar_demo1, grammar_demo2, grammar_demo3};
 
         ///////////////////////////////////////////////////////////////////////
@@ -410,7 +403,7 @@ mod test {
             Follow! {E1| rparen NUL },
             Follow! {T| add rparen NUL },
             Follow! {T1| add rparen NUL },
-            Follow! {F| add mul rparen NUL }
+            Follow! {F| add mul rparen NUL },
         ];
 
         for (sym, follset) in g1_folls_expected.iter() {
@@ -444,7 +437,7 @@ mod test {
             Follow! {C| g f h },
             Follow! {D| h },
             Follow! {E| f h },
-            Follow! {F| h }
+            Follow! {F| h },
         ];
 
         for (sym, follset) in g2_folls_expected.iter() {
@@ -469,18 +462,18 @@ mod test {
             Follow! {S| NUL },
             Follow! {A| h g NUL },
             Follow! {B| a NUL h g },
-            Follow! {C| b g NUL h }
+            Follow! {C| b g NUL h },
         ];
 
         for (sym, follset) in g3_folls_expected.iter() {
             debug_assert_eq!(g3_follow_sets.get(sym).unwrap(), follset);
         }
-
     }
 
     #[test]
     fn test_bigint_rational_basic_op() {
-        use num::{ BigRational, BigInt };
+        use std::str::FromStr;
+        use num::{BigInt, BigRational};
 
         let a = BigInt::from_str("100000000000000000000000000002").unwrap();
         let b = BigInt::from_str("20000000000000000000000000000").unwrap();

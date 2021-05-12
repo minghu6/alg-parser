@@ -8,7 +8,6 @@ use std::{
     vec
 };
 
-use crate::make_vec_macro_rules;
 
 pub type CounterType = impl FnMut() -> usize;
 

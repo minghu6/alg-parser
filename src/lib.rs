@@ -18,7 +18,6 @@ extern crate maplit;
 extern crate proc_macros; /* to avoid a cargo bug when cross-compiling (e.g. wasm) */
 
 pub use proc_macros::{
-    // make_regex_node
     make_vec_macro_rules
 };
 
@@ -28,9 +27,17 @@ make_vec_macro_rules!(vecdeq , std::collections::VecDeque, push_back);
 pub mod utils;
 pub mod regex;
 pub mod parser;
-
 pub mod regex_demo;
 pub mod parser_demo;
+
+
+pub use crate::parser_demo::{
+    parse_algb_ratio
+};
+
+pub use crate::utils:: {
+    Stack
+};
 
 
 ////////////////////////////////////////////////////////////////////////////////

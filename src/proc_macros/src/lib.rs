@@ -2,8 +2,8 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::{ Span };
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{Ident, LitStr, Token, parse_macro_input, Path};
-use quote::{quote, format_ident};
+use syn::{Ident, Token, parse_macro_input, Path};
+use quote::{quote};
 
 
 ////////////////////////////////////////////////////////////////////////////////
