@@ -1,4 +1,11 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt, rc::{Rc}};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    fmt,
+    rc::{Rc},
+    vec,
+    iter
+};
 
 use indexmap::{indexmap, indexset, IndexMap, IndexSet};
 use itertools::Itertools;
@@ -195,7 +202,7 @@ type PredLL1Sets = HashMap<PredSetSym, IndexSet<GramProd>>;
 
 
 /// Gram: 语法类型
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Gram {
     name: String,
     productions: IndexSet<GramProd>,
@@ -211,6 +218,11 @@ impl Gram {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    // move method
+    pub fn extend_gram(&mut self, income_gram: Gram) {
+        self.extend(income_gram.into_iter());
     }
 
     pub fn insert_prod(&mut self, prod: GramProd) {
@@ -589,6 +601,23 @@ fn _calc_follow_sets_turn(
     }
 
     stable
+}
+
+impl Extend<GramProd> for Gram {
+    fn extend<I: IntoIterator<Item = GramProd>>(&mut self, iter: I) {
+        for item in iter {
+            self.productions.insert(item);
+        }
+    }
+}
+
+impl iter::IntoIterator for Gram {
+    type Item = GramProd;
+    type IntoIter = indexmap::set::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.productions.into_iter()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

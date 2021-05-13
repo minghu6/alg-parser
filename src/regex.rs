@@ -14,7 +14,7 @@ use std::{
 
 use key_set::{KeyHashSet, KeySet};
 
-use super::utils::{char_inc, char_range, gen_counter, CounterType};
+use super::utils::{char_inc, char_dec, char_range, gen_counter, CounterType};
 
 ///! 因为只有一套实现(起码我开始写的时候是这么认为的，汗)，所以不需要定义接口
 
@@ -43,6 +43,7 @@ macro_rules! charset {
     }
 }
 
+/// 我对这个结构不太满意，先凑和用
 #[derive(Debug, Clone, Eq, Hash)]
 pub struct CharSet {
     pub char_scopes: Vec<(char, char)>,
@@ -182,6 +183,68 @@ impl CharSet {
         }
     }
 
+    pub fn exclude_one(&mut self, c: char) {
+        self.compress();
+
+        enum Strategy {
+            RemoveSingle(char),
+            DoNothing,
+            PushNewScope((char, char))
+        }
+
+        let mut strategy= Strategy::DoNothing;
+        for (lower, upper) in self.char_scopes.iter_mut() {
+            if *lower == *upper {
+                if *lower == c {
+                    strategy = Strategy::RemoveSingle(c);
+                    break;
+                }
+            } else {
+                if *lower == c {
+                    *lower = char_inc(&c).unwrap();
+                    break;
+                } else if *upper == c {
+                    *upper = char_dec(&c).unwrap();
+                } else if *lower < c && c < *upper {
+                    strategy
+                        = Strategy::PushNewScope(
+                            (char_inc(&c).unwrap(), upper.clone())
+                        );
+                    *upper = char_dec(&c).unwrap();
+                }
+            }
+        }
+
+        match strategy {
+            Strategy::RemoveSingle(c) => {
+                self.char_scopes
+                    = self.char_scopes.iter().cloned()
+                        .filter(|(lower, upper)| lower == upper && *lower == c)
+                        .collect();
+            },
+
+            Strategy::PushNewScope(scope) => {
+                self.char_scopes.push(scope);
+            }
+
+            _ => ()
+        }
+    }
+
+    ///
+    /// ```
+    /// use alg_parser::regex::{ CharSet, all_char_set };
+    /// use alg_parser::charset;
+    /// let mut charset1 = all_char_set();
+    /// charset1.exclude_chars("\"\\\n\t");
+    /// debug_assert!(!charset1.contains(&'"'))
+    /// ```
+    pub fn exclude_chars(&mut self, chars: &str) {
+        for c in chars.chars() {
+            self.exclude_one(c);
+        }
+    }
+
     fn _test(&self) {
         // 用来看一下宏展开
         //charset!(a b);
@@ -236,6 +299,10 @@ impl PartialEq for CharSet {
     }
 }
 
+
+pub fn all_char_set() -> CharSet {
+    CharSet::with_char_scope(('\u{0}', '\u{65536}'))
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 /// GrammarNode: Simple Regex Node
@@ -298,6 +365,13 @@ impl RegexNode {
         node.nodetype = RegexNodeType::And;
 
         node
+    }
+
+    pub fn wrap_at_most_one(child: Self) -> RegexNode {
+        let mut wrapper = Self::create_and_node();
+        wrapper.add_child(child);
+        wrapper.repeat_times = (0, 1);
+        wrapper
     }
 
     ///
@@ -433,6 +507,11 @@ impl State {
 
     pub fn add_epsilon_transition(&mut self, state: Rc<RefCell<State>>) {
         self.add_transition(Transition::epsilon(state))
+    }
+
+    pub fn has_epsilon_transition(&self) -> bool {
+        self.transitions.iter()
+            .any(|trans| trans.is_epsilon())
     }
 
     fn dump(
@@ -802,20 +881,25 @@ impl fmt::Display for DFATransition {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Converter
+//// Converter
 
 /// Concatenate two subgraph
 /// 也许subgraph应该是一个子图结构
+/// from_graph => to_graph
 pub fn concat_state(
     from_graph: &(Rc<RefCell<State>>, Rc<RefCell<State>>),
     to_graph: &(Rc<RefCell<State>>, Rc<RefCell<State>>),
-) {
-    let from_end_state = Rc::clone(&from_graph.1);
-    let to_begin_state = Rc::clone(&to_graph.0);
+)
+{
+
+    let (_from_begin_state, from_end_state) = from_graph;
+
+    let (to_begin_state, _to_end_state) = to_graph;
 
     (*from_end_state)
         .borrow_mut()
-        .copy_transitions(&(*to_begin_state).borrow());
+        .copy_transitions(&to_begin_state.as_ref().borrow());
+
     (*from_end_state).borrow_mut().acceptable = false;
 }
 
@@ -846,7 +930,7 @@ fn add_repetition(
 
         (*begin_state)
             .borrow_mut()
-            .add_transition(Transition::epsilon(Rc::clone(&to_state)));
+            .add_transition(Transition::epsilon(Rc::clone(&from_state)));
 
         (*to_state)
             .borrow_mut()
@@ -929,8 +1013,16 @@ fn _regex2nfa(
     }
 
     // 处理重复的情况
+    // (1, 1)
+    // (0, 1)          ?
+    // (1, usize::MAX) +
+    // (0, usize::MAX) *
     if node.repeat_times.0 != 1 || node.repeat_times.1 != 1 {
         (begin_state, end_state) = add_repetition(begin_state, end_state, node, counter);
+    }
+
+    if reach_acceptable_state(&begin_state.as_ref().borrow()) {
+        begin_state.as_ref().borrow_mut().acceptable = true;
     }
 
     (begin_state, end_state)
@@ -1124,10 +1216,14 @@ pub fn match_with_nfa(state: &State, input: &str) -> bool {
     #[cfg(debug_assertions)]
     println!("NFA matching: {} ", input);
 
-    let chars_input: Vec<char> = input.chars().map(|x| x).collect();
-
-    let matched_index = _match_with_nfa(state, &chars_input[..], 0);
-    let matched = matched_index == input.len();
+    let matched;
+    if input.is_empty() {
+        matched = state.acceptable;
+    } else {
+        let chars_input: Vec<char> = input.chars().map(|x| x).collect();
+        let matched_index = _match_with_nfa(state, &chars_input[..], 0);
+        matched = matched_index == input.len();
+    }
 
     #[cfg(debug_assertions)]
     println!("matched? : {}\n", matched);
@@ -1191,19 +1287,22 @@ fn reach_acceptable_state(state: &State) -> bool {
         })
 }
 
-// Do DFA match
+/// Do DFA match
 pub fn match_with_dfa(state: &DFAState, input: &str) -> bool {
     #[cfg(debug_assertions)]
     println!("DFA matching: {} ", input);
 
-    if input.len() == 0 { return false }
+    let matched;
+    if input.is_empty() {
+        matched = state.is_acceptable()
+    } else {
+        let chars_input: Vec<char> = input.chars().map(|x| x).collect();
 
-    let chars_input: Vec<char> = input.chars().map(|x| x).collect();
-
-    let matched = match _match_with_dfa(state, &chars_input[..], 0) {
-        Ok((_, nxt_st)) => nxt_st.as_ref().borrow().is_acceptable(),
-        _ => false,
-    };
+        matched = match _match_with_dfa(state, &chars_input[..], 0) {
+            Ok((_, nxt_st)) => nxt_st.as_ref().borrow().is_acceptable(),
+            _ => false,
+        };
+    }
 
     #[cfg(debug_assertions)]
     println!("matched? : {}\n", matched);
@@ -1303,6 +1402,7 @@ impl PartialEq for PriRegexMatcher {
 /// Common Lex Grammar Node
 
 /// Generate Literal Regex Node
+/// "abc" => a `and` b `and` c (differ from Charset:parse which is `or`)
 pub fn lit_regex_node(lit: &str) -> RegexNode {
     let mut node = RegexNode::create_and_node();
 
@@ -1364,9 +1464,17 @@ make_regex_and_matcher!(add_r, add_m, "+", "add");
 make_regex_and_matcher!(sub_r, sub_m, "-", "sub");
 make_regex_and_matcher!(mul_r, mul_m, "*", "mul");
 make_regex_and_matcher!(div_r, div_m, "/", "div");
-make_regex_and_matcher!(lparen_r, lparen_m, ")", "rparen");
-make_regex_and_matcher!(rparen_r, rparen_m, "(", "lparen");
-
+make_regex_and_matcher!(lparen_r, lparen_m, "(", "lparen");
+make_regex_and_matcher!(rparen_r, rparen_m, ")", "rparen");
+make_regex_and_matcher!(
+    singlequote_r, singlequote_m, r#"'"#, "singlequote"
+);
+make_regex_and_matcher!(
+    doublequote_r, doublequote_m, r#"""#, "doublequote"
+);
+make_regex_and_matcher!(
+    underscope_r, underscope_m, r#"_"#, "underscope"
+);
 
 /// Identity Regex
 /// [_a-zA-Z][_a-zA-Z0-9]+
@@ -1384,19 +1492,96 @@ pub fn id_r() -> RegexNode {
     root
 }
 
-pub fn intlit_r() -> RegexNode {
-    simple_regex!{ ["0-9"](+) }
+/// 匹配以转义符`\`开头的长度为2的串
+pub fn escape_seq_r() -> RegexNode {
+    simple_regex!{
+        [r#"\"#](1)[r#"tnbfr"\"#](1)
+    }
 }
 
-// string should be impl by grammar for it has escape string
-// which is a little complicated for simple regex
-// pub fn strlit_r() -> RegexNode {
-//     simple_regex!{ [r#"""#](1)["\u{0}-\u{FF}"](*)[r#"""#](1) }
-// }
+/// 匹配单个字符，排除`\`, `"`, `\n`, `\t`
+pub fn normal_seq_r() -> RegexNode {
+    let mut normal_seq_charset = all_char_set();
+    normal_seq_charset.exclude_chars("\"\\\n\t");
+
+    RegexNode::from_charset(
+        normal_seq_charset
+    )
+}
+
+pub fn strlit_r() -> RegexNode {
+    let mut root = RegexNode::create_and_node();
+
+    let mut seq = RegexNode::create_or_node();
+    seq.add_child(escape_seq_r());
+    seq.add_child(normal_seq_r());
+    seq.repeat_times = (0, usize::MAX);
+
+
+    root.add_child(doublequote_r());
+    root.add_child(seq);
+    root.add_child(doublequote_r());
+
+    root
+}
+
+pub fn no_zero_digit_r() -> RegexNode {
+    simple_regex! { ["1-9"](1) }
+}
+
+pub fn digit_r() -> RegexNode {
+    simple_regex! { ["0-9"](1) }
+}
+
+pub fn underscopes_r() -> RegexNode {
+    let mut node = underscope_r();
+
+    node.repeat_times = (1, usize::MAX);
+
+    node
+}
+
+/// ```antlr
+/// fragment
+/// Digits  // 0_1, 22, 3, 4__5_
+///     : Digit (((Digit | UNDERSCORE)+)? Digit)?
+///     ;
+/// ```
+pub fn digits_r() -> RegexNode {
+    let mut root = RegexNode::create_and_node();
+
+    let captial_part = digit_r();
+
+    let mut trail_part_1 = RegexNode::create_and_node();
+
+    let mut mid_part_1 = RegexNode::create_or_node();
+    mid_part_1.add_child(digit_r());
+    mid_part_1.add_child(underscope_r());
+    mid_part_1.repeat_times = (1, usize::MAX);
+
+    let mid_part
+        = RegexNode::wrap_at_most_one(mid_part_1);
+
+    trail_part_1.add_child(mid_part);
+    trail_part_1.add_child(digit_r());
+
+    let trail_part = RegexNode::wrap_at_most_one(trail_part_1);
+
+    root.add_child(captial_part);
+    root.add_child(trail_part);
+
+    root
+}
+
+pub fn intlit_r() -> RegexNode {
+    // simple_regex!{ ["0-9"](+) }
+    digits_r()
+}
 
 make_matcher!(id_r => id_m);
 make_matcher!(intlit_r => intlit_m);
-// make_matcher!(strlit_r => strlit_m);
+make_matcher!(strlit_r => strlit_m);
+make_matcher!(digits_r => digits_m);
 
 
 /// Int Regex
@@ -1496,5 +1681,42 @@ mod test {
         debug_assert!(rparen_m.is_match(")"));
 
         assert!(!rparen_m.is_match("("));
+    }
+
+    #[test]
+    fn test_same_defined_matcher() {
+        use super::{ strlit_m, digits_m, digits_r, regex2nfa, gen_counter, match_with_nfa };
+
+        // strlit_m
+        let strlitm = strlit_m();
+
+        assert!(strlitm.is_match(r#"  "abcdef"   "#.trim()));
+
+        assert!(strlitm.is_match(r#"  "abc\\def"   "#.trim()));
+
+        assert!(strlitm.is_match(r#"  "abc\\\"def"   "#.trim()));
+
+        assert!(!strlitm.is_match(r#"  "abc"def"   "#.trim()));
+
+        let nfa_digits = regex2nfa(&mut gen_counter(), &digits_r());
+        assert!(match_with_nfa(
+            &nfa_digits.as_ref().borrow(),
+            "41_12"
+        ));
+
+        // println!("{}", nfa_digits.as_ref().borrow());
+
+        // println!("{:?}", nfa_digits.as_ref().borrow());
+
+        // digits_m
+        let digitsm = digits_m();
+
+        assert!(!digitsm.is_match(""));
+        assert!(digitsm.is_match("5"));
+        assert!(digitsm.is_match("02"));
+        assert!(digitsm.is_match("1_24"));
+        assert!(digitsm.is_match("1__2"));
+        assert!(digitsm.is_match("0_2"));
+        assert!(!digitsm.is_match("123__"));
     }
 }

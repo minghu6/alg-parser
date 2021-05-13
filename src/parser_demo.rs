@@ -342,9 +342,78 @@ pub fn grammar_demo3() -> Gram {
     |]
 }
 
+pub fn demo_full() -> LL1Parser {
+    declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
+    declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
+    use_epsilon!(ε);
+
+    let sum_rule = grammar![sum|
+        sum:
+        | product addend;
+
+        product:
+        | pri multiplier;
+
+        pri:
+        | id;
+        | intlit;
+        | lparen sum rparen;
+
+        multiplier:
+        | mul pri multiplier;
+        | div pri multiplier;
+        | ε;
+
+        addend:
+        | add product addend;
+        | sub product addend;
+        | ε;
+    |];
+
+    // let strlit_rule = grammar![strlit|
+
+    // |];
+
+
+    let mut expression_rule = grammar![expression|
+        expression:
+        | sum;
+    |];
+
+    expression_rule.extend_gram(sum_rule);
+
+    let fst_sets = expression_rule.first_sets();
+    let foll_sets = expression_rule.follow_sets(&fst_sets);
+    let pred_sets = expression_rule.prediction_sets(&fst_sets, &foll_sets);
+
+    // println!("{:#?}", fst_sets);
+    // println!("{:#?}", foll_sets);
+    // println!("{:#?}", pred_sets);
+
+    LL1Parser::new("expression", expression_rule, basic_lexer())
+}
+
+
 #[cfg(test)]
 mod test {
     use num::{BigInt, BigRational, FromPrimitive};
+
+    use crate::parser::Parser;
+
+    #[test]
+    fn test_demo_full() {
+        use super::demo_full;
+
+        let parser = demo_full();
+
+        match parser.parse("12+34") {
+            Err(err) => println!("{}", err),
+            //_ => ()
+            Ok(ast) => {
+                println!("{}", ast.as_ref().borrow());
+            }
+        }
+    }
 
     #[test]
     fn ll_expression_parser_works() {

@@ -115,6 +115,13 @@ pub fn char_inc(x: &char) -> Option<char> {
 }
 
 #[inline]
+pub fn char_dec(x: &char) -> Option<char> {
+    use std::char::from_u32;
+
+    from_u32((*x as u32) - 1)
+}
+
+#[inline]
 pub fn char_range(lower: char, upper: char) -> Range<char> {
     lower..char_inc(&upper).unwrap()
 }
