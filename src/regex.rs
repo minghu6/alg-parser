@@ -8,13 +8,13 @@ use std::{
     hash::{Hash, Hasher},
     iter::IntoIterator,
     mem::drop,
-    rc::{Rc},
+    rc::Rc,
     vec::IntoIter,
 };
 
 use key_set::{KeyHashSet, KeySet};
 
-use super::utils::{char_inc, char_dec, char_range, gen_counter, CounterType};
+use super::utils::{char_dec, char_inc, char_range, gen_counter, CounterType};
 
 ///! 因为只有一套实现(起码我开始写的时候是这么认为的，汗)，所以不需要定义接口
 
@@ -125,7 +125,6 @@ impl CharSet {
         self.char_scopes = compressed_vecdeq.into_iter().collect();
     }
 
-
     ///
     /// ```
     /// use alg_parser::regex::CharSet;
@@ -140,7 +139,9 @@ impl CharSet {
     pub fn parse(input: &str) -> Self {
         let mut char_scopes = vec![];
         enum Status {
-            End, Fst, Mid
+            End,
+            Fst,
+            Mid,
         }
 
         let mut status = Status::End;
@@ -150,17 +151,15 @@ impl CharSet {
                 Status::End => {
                     scope.push(c);
                     status = Status::Fst;
-                },
+                }
 
-                Status::Fst => {
-                    match c {
-                        '-' => status = Status::Mid,
-                        _ => {
-                            scope.push(scope[0]);
-                            char_scopes.push((scope[0], scope[1]));
-                            scope = vec![c];
-                            status = Status::Fst;
-                        }
+                Status::Fst => match c {
+                    '-' => status = Status::Mid,
+                    _ => {
+                        scope.push(scope[0]);
+                        char_scopes.push((scope[0], scope[1]));
+                        scope = vec![c];
+                        status = Status::Fst;
                     }
                 },
 
@@ -178,9 +177,7 @@ impl CharSet {
             char_scopes.push((scope[0], scope[0]));
         }
 
-        Self {
-            char_scopes
-        }
+        Self { char_scopes }
     }
 
     pub fn exclude_one(&mut self, c: char) {
@@ -189,10 +186,10 @@ impl CharSet {
         enum Strategy {
             RemoveSingle(char),
             DoNothing,
-            PushNewScope((char, char))
+            PushNewScope((char, char)),
         }
 
-        let mut strategy= Strategy::DoNothing;
+        let mut strategy = Strategy::DoNothing;
         for (lower, upper) in self.char_scopes.iter_mut() {
             if *lower == *upper {
                 if *lower == c {
@@ -206,10 +203,7 @@ impl CharSet {
                 } else if *upper == c {
                     *upper = char_dec(&c).unwrap();
                 } else if *lower < c && c < *upper {
-                    strategy
-                        = Strategy::PushNewScope(
-                            (char_inc(&c).unwrap(), upper.clone())
-                        );
+                    strategy = Strategy::PushNewScope((char_inc(&c).unwrap(), upper.clone()));
                     *upper = char_dec(&c).unwrap();
                 }
             }
@@ -217,17 +211,19 @@ impl CharSet {
 
         match strategy {
             Strategy::RemoveSingle(c) => {
-                self.char_scopes
-                    = self.char_scopes.iter().cloned()
-                        .filter(|(lower, upper)| lower == upper && *lower == c)
-                        .collect();
-            },
+                self.char_scopes = self
+                    .char_scopes
+                    .iter()
+                    .cloned()
+                    .filter(|(lower, upper)| lower == upper && *lower == c)
+                    .collect();
+            }
 
             Strategy::PushNewScope(scope) => {
                 self.char_scopes.push(scope);
             }
 
-            _ => ()
+            _ => (),
         }
     }
 
@@ -298,7 +294,6 @@ impl PartialEq for CharSet {
         self_copy.char_scopes == other_copy.char_scopes
     }
 }
-
 
 pub fn all_char_set() -> CharSet {
     CharSet::with_char_scope(('\u{0}', '\u{65536}'))
@@ -510,8 +505,7 @@ impl State {
     }
 
     pub fn has_epsilon_transition(&self) -> bool {
-        self.transitions.iter()
-            .any(|trans| trans.is_epsilon())
+        self.transitions.iter().any(|trans| trans.is_epsilon())
     }
 
     fn dump(
@@ -602,7 +596,6 @@ impl fmt::Debug for State {
         }
     }
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Transition
@@ -889,9 +882,7 @@ impl fmt::Display for DFATransition {
 pub fn concat_state(
     from_graph: &(Rc<RefCell<State>>, Rc<RefCell<State>>),
     to_graph: &(Rc<RefCell<State>>, Rc<RefCell<State>>),
-)
-{
-
+) {
     let (_from_begin_state, from_end_state) = from_graph;
 
     let (to_begin_state, _to_end_state) = to_graph;
@@ -1035,8 +1026,7 @@ pub fn nfa2dfa(
     counter: &mut CounterType,
     begin_state: Rc<RefCell<State>>,
     alphabet: &CharSet,
-) -> Rc<RefCell<DFAState>>
-{
+) -> Rc<RefCell<DFAState>> {
     // state的epsilon闭包缓存
     let mut state_closure_cache = HashMap::new();
 
@@ -1333,11 +1323,7 @@ fn _match_with_dfa(
             return Ok((next_index, next_state));
         }
 
-        _match_with_dfa(
-            &next_state.as_ref().borrow(),
-            chars_input,
-            next_index,
-        )
+        _match_with_dfa(&next_state.as_ref().borrow(), chars_input, next_index)
     } else {
         Err(())
     }
@@ -1376,9 +1362,7 @@ impl PriRegexMatcher {
     }
 
     pub fn new_key_set() -> Rc<RefCell<KeyHashSet<Self, String>>> {
-        Rc::new(RefCell::new(
-            KeyHashSet::new(|x| x.name.clone())
-        ))
+        Rc::new(RefCell::new(KeyHashSet::new(|x| x.name.clone())))
     }
 
     pub fn is_match(&self, value: &str) -> bool {
@@ -1426,12 +1410,12 @@ macro_rules! make_matcher {
                 &$name_r(),
             )
         }
-    }
+    };
 }
 
 #[macro_export]
 macro_rules! make_regex_and_matcher {
-    ($name_r:ident , $name_m:ident , $value:literal, $name:literal) => {
+    ($name_r:ident, $name_m:ident, $value:literal, $name:literal) => {
         pub fn $name_r() -> $crate::regex::RegexNode {
             $crate::regex::lit_regex_node($value)
         }
@@ -1466,24 +1450,32 @@ make_regex_and_matcher!(mul_r, mul_m, "*", "mul");
 make_regex_and_matcher!(div_r, div_m, "/", "div");
 make_regex_and_matcher!(lparen_r, lparen_m, "(", "lparen");
 make_regex_and_matcher!(rparen_r, rparen_m, ")", "rparen");
-make_regex_and_matcher!(
-    singlequote_r, singlequote_m, r#"'"#, "singlequote"
-);
-make_regex_and_matcher!(
-    doublequote_r, doublequote_m, r#"""#, "doublequote"
-);
-make_regex_and_matcher!(
-    underscope_r, underscope_m, r#"_"#, "underscope"
-);
+make_regex_and_matcher!(singlequote_r, singlequote_m, r#"'"#, "singlequote");
+make_regex_and_matcher!(doublequote_r, doublequote_m, r#"""#, "doublequote");
+make_regex_and_matcher!(underscope_r, underscope_m, r#"_"#, "underscope");
+make_regex_and_matcher!(dot_r, dot_m, ".", "dot");
+make_regex_and_matcher!(semi_r, semi_m, ";", "semi");
+make_regex_and_matcher!(boolean_r, boolean_m);
+make_regex_and_matcher!(return_r, return_m, "return", "r#return");
+make_regex_and_matcher!(lbrace_r, lbrace_m, "{", "lbrace");
+make_regex_and_matcher!(rbrace_r, rbrace_m, "}", "rbrace");
+make_regex_and_matcher!(lbrack_r, lbrack_m, "[", "lbrack");
+make_regex_and_matcher!(rbrack_r, rbrack_m, "]", "rbrack");
+make_regex_and_matcher!(void_r, void_m);
+make_regex_and_matcher!(comma_r, comma_m, ",", "comma");
+make_regex_and_matcher!(extends_r, extends_m);
+make_regex_and_matcher!(class_r, class_m);
+make_regex_and_matcher!(assign_r, assign_m, "=", "assign");
+
 
 /// Identity Regex
 /// [_a-zA-Z][_a-zA-Z0-9]+
 pub fn id_r() -> RegexNode {
     let mut root = RegexNode::create_and_node();
-    let capital_node = RegexNode::from_charset( charset!(_-_ | a-z | A-Z));
+    let capital_node = RegexNode::from_charset(charset!(_ - _ | a - z | A - Z));
     let trails_node = RegexNode::from_charset_repeat_times(
-        charset!(_-_| a-z | A-Z | 0-9),
-         (1, usize::MAX)
+        charset!(_ - _ | a - z | A - Z | 0 - 9),
+        (0, usize::MAX),
     );
 
     root.add_child(capital_node);
@@ -1494,7 +1486,7 @@ pub fn id_r() -> RegexNode {
 
 /// 匹配以转义符`\`开头的长度为2的串
 pub fn escape_seq_r() -> RegexNode {
-    simple_regex!{
+    simple_regex! {
         [r#"\"#](1)[r#"tnbfr"\"#](1)
     }
 }
@@ -1504,9 +1496,7 @@ pub fn normal_seq_r() -> RegexNode {
     let mut normal_seq_charset = all_char_set();
     normal_seq_charset.exclude_chars("\"\\\n\t");
 
-    RegexNode::from_charset(
-        normal_seq_charset
-    )
+    RegexNode::from_charset(normal_seq_charset)
 }
 
 pub fn strlit_r() -> RegexNode {
@@ -1516,7 +1506,6 @@ pub fn strlit_r() -> RegexNode {
     seq.add_child(escape_seq_r());
     seq.add_child(normal_seq_r());
     seq.repeat_times = (0, usize::MAX);
-
 
     root.add_child(doublequote_r());
     root.add_child(seq);
@@ -1559,8 +1548,7 @@ pub fn digits_r() -> RegexNode {
     mid_part_1.add_child(underscope_r());
     mid_part_1.repeat_times = (1, usize::MAX);
 
-    let mid_part
-        = RegexNode::wrap_at_most_one(mid_part_1);
+    let mid_part = RegexNode::wrap_at_most_one(mid_part_1);
 
     trail_part_1.add_child(mid_part);
     trail_part_1.add_child(digit_r());
@@ -1573,26 +1561,82 @@ pub fn digits_r() -> RegexNode {
     root
 }
 
+/// ```antlr
+/// DecimalFloatingPointLiteral
+/// : Digits DOT Digits?
+/// | DOT Digits
+/// ```
+pub fn floatlit_r() -> RegexNode {
+    let mut root = RegexNode::create_or_node();
+
+    let mut br1 = RegexNode::create_and_node();
+    br1.add_child(digits_r());
+    br1.add_child(dot_r());
+    br1.add_child(RegexNode::wrap_at_most_one(digit_r()));
+
+    let mut br2 = RegexNode::create_and_node();
+    br2.add_child(dot_r());
+    br2.add_child(digits_r());
+
+    root.add_child(br1);
+    root.add_child(br2);
+
+    root
+}
+
+/// line comment: `; xxxxx`
+pub fn semi_line_comment_r() -> RegexNode {
+    let mut escape_charset = all_char_set();
+    escape_charset.exclude_chars("\n\r");
+    let anybut_node = RegexNode::from_charset_repeat_times(
+        escape_charset,
+        (0, usize::MAX)
+    );
+
+    let mut root = RegexNode::create_and_node();
+    root.add_child(semi_r());
+    root.add_child(anybut_node);
+
+    root
+}
+
+/// line comment: `; xxxxx`
+pub fn slash_line_comment_r() -> RegexNode {
+    let mut escape_charset = all_char_set();
+    escape_charset.exclude_chars("\n\r");
+    let anybut_node = RegexNode::from_charset_repeat_times(
+        escape_charset,
+        (0, usize::MAX)
+    );
+
+    let mut root = RegexNode::create_and_node();
+    root.add_child(
+        lit_regex_node("\\\\")
+     );
+    root.add_child(anybut_node);
+
+    root
+}
+
 pub fn intlit_r() -> RegexNode {
     // simple_regex!{ ["0-9"](+) }
     digits_r()
+}
+
+
+/// Int Regex
+/// [0-9]+
+pub fn number_r() -> RegexNode {
+    RegexNode::from_charset_repeat_times(charset!(0 - 9), (1, usize::MAX))
 }
 
 make_matcher!(id_r => id_m);
 make_matcher!(intlit_r => intlit_m);
 make_matcher!(strlit_r => strlit_m);
 make_matcher!(digits_r => digits_m);
-
-
-/// Int Regex
-/// [0-9]+
-pub fn number_r() -> RegexNode {
-    RegexNode::from_charset_repeat_times( charset!(0-9), (1, usize::MAX))
-}
-
-make_matcher!(number_r => number_m);
-
-
+make_matcher!(floatlit_r => floatlit_m);
+make_matcher!(semi_line_comment_r => semi_line_comment_m);
+make_matcher!(slash_line_comment_r => slash_line_comment_m);
 
 #[cfg(test)]
 mod test {
@@ -1623,7 +1667,9 @@ mod test {
         use std::collections::HashSet;
 
         assert_eq!(
-            charset![a - a | 0 - 3].into_iter().collect::<HashSet<char>>(),
+            charset![a - a | 0 - 3]
+                .into_iter()
+                .collect::<HashSet<char>>(),
             hashset!['a', '0', '1', '2', '3']
         );
     }
@@ -1632,14 +1678,15 @@ mod test {
     fn test_simple_regex() {
         use crate::simple_regex;
 
-        let regex1 = simple_regex!{ ["a-zb-xc"](+) ["z"]() ["z"]() };
+        let regex1 = simple_regex! { ["a-zb-xc"](+) ["z"]() ["z"]() };
         println!("{}", regex1);
     }
 
     #[test]
     fn nfa_dfa_match_works() {
         use super::{
-            match_with_dfa, gen_counter, int_r, lparen_r, match_with_nfa, nfa2dfa, regex2nfa, ascii_charset
+            ascii_charset, gen_counter, int_r, lparen_r, match_with_dfa, match_with_nfa, nfa2dfa,
+            regex2nfa,
         };
 
         let mut nfa_root = regex2nfa(&mut gen_counter(), &int_r());
@@ -1668,7 +1715,7 @@ mod test {
 
     #[test]
     fn pri_regx_matcher_did_works() {
-        use super::{ int_m, rparen_m };
+        use super::{int_m, rparen_m};
 
         let int_m = int_m();
 
@@ -1684,8 +1731,19 @@ mod test {
     }
 
     #[test]
-    fn test_same_defined_matcher() {
-        use super::{ strlit_m, digits_m, digits_r, regex2nfa, gen_counter, match_with_nfa };
+    fn test_some_defined_matcher() {
+        use super::{
+            digits_m,
+            digits_r,
+            gen_counter,
+            match_with_nfa,
+            regex2nfa,
+            strlit_m,
+            floatlit_m,
+            semi_line_comment_m,
+            void_m,
+            id_m
+        };
 
         // strlit_m
         let strlitm = strlit_m();
@@ -1699,10 +1757,7 @@ mod test {
         assert!(!strlitm.is_match(r#"  "abc"def"   "#.trim()));
 
         let nfa_digits = regex2nfa(&mut gen_counter(), &digits_r());
-        assert!(match_with_nfa(
-            &nfa_digits.as_ref().borrow(),
-            "41_12"
-        ));
+        assert!(match_with_nfa(&nfa_digits.as_ref().borrow(), "41_12"));
 
         // println!("{}", nfa_digits.as_ref().borrow());
 
@@ -1718,5 +1773,27 @@ mod test {
         assert!(digitsm.is_match("1__2"));
         assert!(digitsm.is_match("0_2"));
         assert!(!digitsm.is_match("123__"));
+
+        let floatm = floatlit_m();
+
+        assert!(floatm.is_match("12.0"));
+        assert!(floatm.is_match(".1"));
+        assert!(floatm.is_match(".0"));
+        assert!(floatm.is_match("0.0"));
+        assert!(floatm.is_match("0."));
+        assert!(!floatm.is_match("12"));
+        assert!(!floatm.is_match("."));
+
+        let line_commentm = semi_line_comment_m();
+        assert!(line_commentm.is_match(";abxsxjsb/\"xs/\'"));
+        assert!(!line_commentm.is_match(";abxsxjsb/\"xs/\'
+
+        "));
+
+        assert!(void_m().is_match("void"));
+
+        let idm = id_m();
+
+        assert!(idm.is_match("a"));
     }
 }

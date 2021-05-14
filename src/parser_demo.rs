@@ -8,7 +8,6 @@ use num::{BigInt, BigRational};
 use super::parser::*;
 use super::*; // require macro
 
-
 /// 一个简单四则运算的语法，为了支持LL(1)的文法，消除了左递归
 /// ```antlr
 /// expression:
@@ -34,9 +33,7 @@ use super::*; // require macro
 ///   | ε;
 /// ```
 ///
-pub fn demo_grammar_ll_algb_sum()
--> (impl Parser, impl Evaluator<BigRational>)
-{
+pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) {
     declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
     declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
     use_epsilon!(ε);
@@ -231,14 +228,14 @@ pub fn demo_grammar_ll_algb_sum()
                 let mut acc_deq = eval_addend(addend_node.get_ast().unwrap());
                 acc_deq.push_front((op, prod_value));
                 acc_deq
-            },
+            }
             None => {
                 vecdeq![(op, prod_value)]
             }
         }
     }
 
-    (parser, AlgSumEval{})
+    (parser, AlgSumEval {})
 }
 
 // An Interestiong Function export to other project
@@ -247,23 +244,23 @@ pub fn parse_algb_ratio(strlit: &str) -> Result<BigRational, String> {
 
     match parser.parse(strlit) {
         Err(err) => Err(err),
-        Ok(ast) => {
-            evalor.eval(&ast)
-        }
+        Ok(ast) => evalor.eval(&ast),
     }
 }
 
 pub fn grammar_demo1() -> Gram {
-    declare_nonterminal!(E);
-    declare_nonterminal!(T);
-    declare_nonterminal!(E1);
-    declare_nonterminal!(T1);
-    declare_nonterminal!(F);
-    declare_terminal!(add);
-    declare_terminal!(mul);
-    declare_terminal!(lparen);
-    declare_terminal!(rparen);
-    declare_terminal!(id);
+    declare_nonterminal! {
+        E,
+        T,
+        T1,
+        E1,
+        F
+    }
+
+    declare_terminal! {
+        add, mul, lparen, rparen, id
+    };
+
     use_epsilon!(ε);
 
     // Yes, it just looks like a Haskell EDSL!
@@ -342,26 +339,244 @@ pub fn grammar_demo3() -> Gram {
     |]
 }
 
+/// parse java
+/// ``` java
+/// class Mammal{
+///     boolean canSpeak(){
+///         return true;
+///     }
+
+///     void speak(){
+///         println("mammal speaking...");
+///     }
+/// }
+
+/// class Cow extends Mammal{
+///     void speak(){
+///         println("moo~~ moo~~");
+///     }
+/// }
+
+/// class Sheep extends Mammal{
+///     void speak(){
+///         println("mee~~ mee~~");
+///     }
+/// }
+
+/// // this is a line comment
+/// Mammal a = Cow();
+/// Mammal b = Sheep();
+
+// // canSpeak() inherit from super class
+// println("a.canSpeak() : " + a.canSpeak());
+// println("b.canSpeak() : " + b.canSpeak());
+/// ```
+/// Antlr4语法的转化式：
+/// A* => As ; As: A | A As | ε
+/// B -> A+ => B -> A As
+/// A? =>  ; A1: A | ε
+///
 pub fn demo_full() -> LL1Parser {
-    declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
-    declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
+    declare_nonterminal! {
+        prog,
+        block,
+        block_statements,
+        expression,
+        sum,
+        product,
+        addend,
+        pri,
+        multiplier,
+        statement,
+        block_statement,
+
+        function_declaration,
+        class_declaration,
+
+        extend_class,
+
+        type_type_or_void,
+        type_type,
+        pri_type,
+        formal_parameters,
+        function_body,
+        expression_list,
+        function_call,
+        algb_pri,
+        lit,
+        class_or_interface_type,
+        class_body,
+        class_body_declarations,
+        class_body_declaration,
+        member_declaration,
+        fieldDeclaration,
+        variable_initializer,
+        variable_declarator,
+        variable_declarators,
+        expression_1,
+        bop
+    };
+    declare_terminal! {
+        -: lexer :-
+        // key
+        r#return,
+        boolean,
+        void,
+        extends,
+        class,
+
+        id,
+        intlit,
+        strlit,
+        lparen,
+        rparen,
+        sub,
+        add,
+        mul,
+        div,
+        semi,
+        lbrace,
+        rbrace,
+        comma,
+        dot,
+        assign
+    };
     use_epsilon!(ε);
+
+    let mut mini_java = grammar![mini_java|
+        prog:
+        | block;
+        | block_statements;
+
+        block:
+        | lbrace block_statements rbrace;
+
+        block_statements:
+        | block_statement block_statements;
+        | ε;
+
+        block_statement:
+        | statement;
+        | function_declaration;
+        | class_declaration;
+
+        class_declaration:
+        | class id extend_class class_body;
+
+        class_body:
+        | lbrace rbrace;
+        | lbrace class_body_declarations rbrace;
+
+        class_body_declarations:
+        | class_body_declaration class_body_declarations;
+        | ε;
+
+        class_body_declaration:
+        | member_declaration;
+        | semi;
+
+        member_declaration:
+        | function_declaration;
+        | fieldDeclaration;
+
+        fieldDeclaration:
+        | variable_declarators semi;
+
+        variable_declarators:
+        | type_type variable_declarator;
+        | type_type variable_declarator comma variable_declarators;
+
+        variable_declarator:
+        | id;
+        | id assign variable_initializer;
+
+        variable_initializer:
+        | expression;
+
+        extend_class:
+        | extends type_type;
+        | ε;
+
+        function_declaration:
+        | type_type_or_void id formal_parameters
+          function_body;
+        | id formal_parameters
+          function_body;
+
+        formal_parameters:
+        | lparen rparen;
+
+        function_body:
+        | block;
+        | semi;
+
+        type_type_or_void:
+        | type_type;
+        | void;
+
+        type_type:
+        | pri_type;
+        | class_or_interface_type;
+
+        class_or_interface_type:
+        | id;
+        | id dot class_or_interface_type;
+
+        pri_type:
+        | boolean;
+
+        statement:
+        | semi;
+        | expression semi;
+        | fieldDeclaration;
+        | r#return expression semi;
+
+        expression:
+        | sum;
+        | pri expression_1;
+        | function_call;
+
+        expression_1:
+        | dot function_call expression_1;
+        | bop pri expression_1;
+        | ε;
+
+        bop:
+        | add;
+        | sub;
+
+        pri:
+        | lit;
+        | id;
+
+        lit:
+        | intlit;
+        | strlit;
+
+        function_call:
+        | id lparen expression_list rparen;
+
+        expression_list:
+        | expression;
+        | expression comma expression_list;
+        | ε;
+    |];
 
     let sum_rule = grammar![sum|
         sum:
         | product addend;
 
         product:
-        | pri multiplier;
+        | algb_pri multiplier;
 
-        pri:
+        algb_pri:
         | id;
         | intlit;
         | lparen sum rparen;
 
         multiplier:
-        | mul pri multiplier;
-        | div pri multiplier;
+        | mul algb_pri multiplier;
+        | div algb_pri multiplier;
         | ε;
 
         addend:
@@ -370,29 +585,19 @@ pub fn demo_full() -> LL1Parser {
         | ε;
     |];
 
-    // let strlit_rule = grammar![strlit|
+    mini_java.extend_gram(sum_rule);
 
-    // |];
+    let fst_sets = mini_java.first_sets();
+    let foll_sets = mini_java.follow_sets(&fst_sets);
+    let pred_sets = mini_java.prediction_sets(&fst_sets, &foll_sets);
 
-
-    let mut expression_rule = grammar![expression|
-        expression:
-        | sum;
-    |];
-
-    expression_rule.extend_gram(sum_rule);
-
-    let fst_sets = expression_rule.first_sets();
-    let foll_sets = expression_rule.follow_sets(&fst_sets);
-    let pred_sets = expression_rule.prediction_sets(&fst_sets, &foll_sets);
-
+    // println!("{:#?}", mini_java);
     // println!("{:#?}", fst_sets);
     // println!("{:#?}", foll_sets);
-    // println!("{:#?}", pred_sets);
+    display_predsets(&pred_sets);
 
-    LL1Parser::new("expression", expression_rule, basic_lexer())
+    LL1Parser::new("mini java", mini_java, lexer)
 }
-
 
 #[cfg(test)]
 mod test {
@@ -406,9 +611,42 @@ mod test {
 
         let parser = demo_full();
 
-        match parser.parse("12+34") {
-            Err(err) => println!("{}", err),
-            //_ => ()
+        // define method
+        let exp1 = r#"
+        class Mammal{
+            boolean canSpeak(){
+                return true;
+            }
+
+            void speak(){
+                println("mammal speaking...");
+            }
+        }
+
+        class Cow extends Mammal{
+            void speak(){
+                println("moo~~ moo~~");
+            }
+        }
+
+        class Sheep extends Mammal{
+            void speak(){
+                println("mee~~ mee~~");
+            }
+        }
+
+        Mammal a = Cow();
+        Mammal b = Sheep();
+
+        println("a.canSpeak() : " + a.canSpeak());
+        println("b.canSpeak() : " + b.canSpeak());
+
+        a.speak();
+        b.speak();
+        "#;
+
+        match parser.parse(exp1) {
+            Err(err) => panic!("{}", err),
             Ok(ast) => {
                 println!("{}", ast.as_ref().borrow());
             }
@@ -417,11 +655,8 @@ mod test {
 
     #[test]
     fn ll_expression_parser_works() {
-        use crate::parser_demo::{
-            demo_grammar_ll_algb_sum,
-            parse_algb_ratio
-        };
-        use super::parser::{ Evaluator, Parser };
+        use super::parser::{Evaluator, Parser};
+        use crate::parser_demo::{demo_grammar_ll_algb_sum, parse_algb_ratio};
 
         let (parser, evalor) = demo_grammar_ll_algb_sum();
 
@@ -443,8 +678,8 @@ mod test {
 
     #[test]
     fn test_grammar_first_follow_set() {
-        use crate::{ First, Follow };
         use super::{grammar_demo1, grammar_demo2, grammar_demo3};
+        use crate::{First, Follow};
 
         ///////////////////////////////////////////////////////////////////////
         /////// G1 Grammar
@@ -541,8 +776,8 @@ mod test {
 
     #[test]
     fn test_bigint_rational_basic_op() {
-        use std::str::FromStr;
         use num::{BigInt, BigRational};
+        use std::str::FromStr;
 
         let a = BigInt::from_str("100000000000000000000000000002").unwrap();
         let b = BigInt::from_str("20000000000000000000000000000").unwrap();
