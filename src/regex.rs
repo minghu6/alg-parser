@@ -1330,23 +1330,76 @@ fn _match_with_dfa(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Primitive Regex Matcher
+//// Token Matcher
 pub trait TokenMatcher {
     fn is_match(&self, value: &str) -> bool;
+    fn name(&self) -> &str;
+
+}
+
+impl fmt::Display for dyn TokenMatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+impl fmt::Debug for dyn TokenMatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+impl PartialEq for dyn TokenMatcher {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
 }
 
 pub fn ascii_charset() -> CharSet {
     CharSet::with_char_scope(('\u{0}', '\u{127}'))
 }
 
-/// A Native Raw Primitive Regex Matcher
+
+////////////////////////////////////////////////////////////////////////////////
+/// Primitive Regex Matcher using NFA State
 #[derive(Clone, Debug)]
-pub struct PriRegexMatcher {
+pub struct NFAMatcher {
+    name: String,
+    state: Rc<RefCell<State>>,
+}
+
+impl NFAMatcher {
+    pub fn with_regex_node(name: &str, regex_node: &RegexNode) -> Self {
+        let nfa_root = regex2nfa(&mut gen_counter(), regex_node);
+
+        Self {
+            name: name.to_string(),
+            state: nfa_root,
+        }
+    }
+}
+
+impl TokenMatcher for NFAMatcher {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn is_match(&self, value: &str) -> bool {
+        match_with_nfa(&self.state.as_ref().borrow(), value)
+    }
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+/// Primitive Regex Matcher using DFA State
+#[derive(Clone, Debug)]
+pub struct DFAMatcher {
     name: String,
     state: Rc<RefCell<DFAState>>,
 }
 
-impl PriRegexMatcher {
+impl DFAMatcher {
     pub fn with_regex_node(name: &str, regex_node: &RegexNode) -> Self {
         let nfa_root = regex2nfa(&mut gen_counter(), regex_node);
         let dfa_root = nfa2dfa(&mut gen_counter(), nfa_root, &ascii_charset());
@@ -1357,28 +1410,22 @@ impl PriRegexMatcher {
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
+
 
     pub fn new_key_set() -> Rc<RefCell<KeyHashSet<Self, String>>> {
         Rc::new(RefCell::new(KeyHashSet::new(|x| x.name.clone())))
     }
 
-    pub fn is_match(&self, value: &str) -> bool {
+
+}
+
+impl TokenMatcher for DFAMatcher {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn is_match(&self, value: &str) -> bool {
         match_with_dfa(&self.state.as_ref().borrow(), value)
-    }
-}
-
-impl fmt::Display for PriRegexMatcher {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-impl PartialEq for PriRegexMatcher {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
     }
 }
 
@@ -1404,10 +1451,12 @@ pub fn lit_regex_node(lit: &str) -> RegexNode {
 #[macro_export]
 macro_rules! make_matcher {
     ($name_r:ident => $name_m:ident) => {
-        pub fn $name_m() -> $crate::regex::PriRegexMatcher {
-            $crate::regex::PriRegexMatcher::with_regex_node(
-                $crate::utils::but_last_n_str(stringify!($name_r), 2),
-                &$name_r(),
+        pub fn $name_m() -> Box<dyn $crate::regex::TokenMatcher> {
+            Box::new(
+                $crate::regex::DFAMatcher::with_regex_node(
+                    $crate::utils::but_last_n_str(stringify!($name_r), 2),
+                    &$name_r(),
+                )
             )
         }
     };
@@ -1420,8 +1469,10 @@ macro_rules! make_regex_and_matcher {
             $crate::regex::lit_regex_node($value)
         }
 
-        pub fn $name_m() -> $crate::regex::PriRegexMatcher {
-            $crate::regex::PriRegexMatcher::with_regex_node($name, &$name_r())
+        pub fn $name_m() -> Box<dyn $crate::regex::TokenMatcher> {
+            Box::new(
+                $crate::regex::DFAMatcher::with_regex_node($name, &$name_r())
+            )
         }
     };
 

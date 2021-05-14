@@ -849,13 +849,13 @@ impl fmt::Display for Token {
 #[derive(Debug)]
 pub struct Lexer {
     pub name: String,
-    pub tokens_map: IndexMap<String, PriRegexMatcher>,
+    pub tokens_map: IndexMap<String, Box<dyn TokenMatcher>>,
     // epsilon 不参与
     // IndexMap: 顺序决定优先级
 }
 
 impl Lexer {
-    pub fn new(name: &str, tokens: Vec<PriRegexMatcher>) -> Self {
+    pub fn new(name: &str, tokens: Vec<Box<dyn TokenMatcher>>) -> Self {
         let tokens_map = tokens
             .into_iter()
             .map(|x| (x.name().to_string(), x))
