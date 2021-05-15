@@ -418,6 +418,10 @@ pub fn demo_full() -> LL1Parser {
     };
     declare_terminal! {
         -: lexer :-
+        // comment
+        slash_block_comment,
+        slash_line_comment,
+
         // key
         r#return,
         boolean,
@@ -613,6 +617,10 @@ mod test {
 
         // define method
         let exp1 = r#"
+        /**
+        mammal.play 演示面向对象编程：继承和多态。
+        */
+
         class Mammal{
             boolean canSpeak(){
                 return true;
@@ -635,14 +643,17 @@ mod test {
             }
         }
 
+        //将子类的实例赋给父类的变量
         Mammal a = Cow();
         Mammal b = Sheep();
 
+        //canSpeak()方法是继承的
         println("a.canSpeak() : " + a.canSpeak());
         println("b.canSpeak() : " + b.canSpeak());
 
-        a.speak();
-        b.speak();
+        //下面两个的叫声会不同。在运行期动态绑定方法。
+        a.speak();  //会打印牛叫
+        b.speak();  //会打印羊叫
         "#;
 
         match parser.parse(exp1) {

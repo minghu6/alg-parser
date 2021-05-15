@@ -296,7 +296,7 @@ impl PartialEq for CharSet {
 }
 
 pub fn all_char_set() -> CharSet {
-    CharSet::with_char_scope(('\u{0}', '\u{65536}'))
+    CharSet::with_char_scope(('\u{0}', '\u{FFFF}'))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1203,8 +1203,8 @@ fn find_dfa_state_by_states_set(
 
 // Do NFA match
 pub fn match_with_nfa(state: &State, input: &str) -> bool {
-    #[cfg(debug_assertions)]
-    println!("NFA matching: {} ", input);
+    // #[cfg(debug_assertions)]
+    // println!("NFA matching: {} ", input);
 
     let matched;
     if input.is_empty() {
@@ -1212,18 +1212,18 @@ pub fn match_with_nfa(state: &State, input: &str) -> bool {
     } else {
         let chars_input: Vec<char> = input.chars().map(|x| x).collect();
         let matched_index = _match_with_nfa(state, &chars_input[..], 0);
-        matched = matched_index == input.len();
+        matched = matched_index == chars_input.len();
     }
 
-    #[cfg(debug_assertions)]
-    println!("matched? : {}\n", matched);
+    // #[cfg(debug_assertions)]
+    // println!("matched? : {}\n", matched);
 
     matched
 }
 
 fn _match_with_nfa(state: &State, chars_input: &[char], init_index: usize) -> usize {
-    #[cfg(debug_assertions)]
-    println!("trying state : {}, index ={}", state.id, init_index);
+    // #[cfg(debug_assertions)]
+    // println!("trying state : {}, index ={}", state.id, init_index);
 
     let mut next_index = init_index;
 
@@ -1377,6 +1377,10 @@ impl NFAMatcher {
             state: nfa_root,
         }
     }
+
+    pub fn state(&self) -> &Rc<RefCell<State>> {
+        &self.state
+    }
 }
 
 impl TokenMatcher for NFAMatcher {
@@ -1410,13 +1414,9 @@ impl DFAMatcher {
         }
     }
 
-
-
     pub fn new_key_set() -> Rc<RefCell<KeyHashSet<Self, String>>> {
         Rc::new(RefCell::new(KeyHashSet::new(|x| x.name.clone())))
     }
-
-
 }
 
 impl TokenMatcher for DFAMatcher {
@@ -1460,7 +1460,19 @@ macro_rules! make_matcher {
             )
         }
     };
+
+    ($name_r:ident => $name_m:ident | nfa) => {
+        pub fn $name_m() -> Box<dyn $crate::regex::TokenMatcher> {
+            Box::new(
+                $crate::regex::NFAMatcher::with_regex_node(
+                    $crate::utils::but_last_n_str(stringify!($name_r), 2),
+                    &$name_r(),
+                )
+            )
+        }
+    }
 }
+
 
 #[macro_export]
 macro_rules! make_regex_and_matcher {
@@ -1662,15 +1674,35 @@ pub fn slash_line_comment_r() -> RegexNode {
 
     let mut root = RegexNode::create_and_node();
     root.add_child(
-        lit_regex_node("\\\\")
+        lit_regex_node("//")
      );
     root.add_child(anybut_node);
 
     root
 }
 
+/// 就远匹配而不是就近匹配，因为我们这个弱鸡的正则匹配不支持序列or
+/// 也许我应该去看看实现一个正则表达式库
+pub fn slash_block_comment_r() -> RegexNode {
+    let escape_charset = all_char_set();
+    let anybut_node = RegexNode::from_charset_repeat_times(
+        escape_charset,
+        (0, usize::MAX)
+    );
+
+    let mut root = RegexNode::create_and_node();
+    root.add_child(
+        lit_regex_node("/*")
+     );
+    root.add_child(anybut_node);
+    root.add_child(
+        lit_regex_node("*/")
+    );
+
+    root
+}
+
 pub fn intlit_r() -> RegexNode {
-    // simple_regex!{ ["0-9"](+) }
     digits_r()
 }
 
@@ -1686,11 +1718,15 @@ make_matcher!(intlit_r => intlit_m);
 make_matcher!(strlit_r => strlit_m);
 make_matcher!(digits_r => digits_m);
 make_matcher!(floatlit_r => floatlit_m);
-make_matcher!(semi_line_comment_r => semi_line_comment_m);
-make_matcher!(slash_line_comment_r => slash_line_comment_m);
+make_matcher!(semi_line_comment_r => semi_line_comment_m | nfa);
+make_matcher!(slash_line_comment_r => slash_line_comment_m | nfa);
+make_matcher!(slash_block_comment_r => slash_block_comment_m | nfa);
+
 
 #[cfg(test)]
 mod test {
+    use crate::regex::match_with_nfa;
+
     #[test]
     fn test_struct_charset() {
         use super::CharSet;
@@ -1792,6 +1828,8 @@ mod test {
             strlit_m,
             floatlit_m,
             semi_line_comment_m,
+            slash_line_comment_m,
+            slash_block_comment_m,
             void_m,
             id_m
         };
@@ -1840,11 +1878,66 @@ mod test {
         assert!(!line_commentm.is_match(";abxsxjsb/\"xs/\'
 
         "));
+        assert!(line_commentm.is_match(";aaa."));
+
+        let slash_commentm = slash_line_comment_m();
+        assert!(slash_commentm.is_match(r#" //下面两个的叫声会不同。在运行期动态绑定方法。"#.trim()));
+
+        let block_slashm = slash_block_comment_m();
+        assert!(block_slashm.is_match(r#"
+        /**
+        abcdde*
+        */
+        "#.trim()
+        ));
+
+        assert!(block_slashm.is_match(r#"
+        /**
+        abcdde* /
+        */
+        "#.trim()
+        ));
+
+        assert!(block_slashm.is_match(r#"
+        /**
+        mammal.play 演示面向对象编程：继承和多态。
+        */
+        "#.trim()
+        ));
+
+        assert!(!block_slashm.is_match(r#"
+        /**/
+        mammal.play 演示面向对象编程：继承和多态。
+
+        "#.trim()
+        ));
 
         assert!(void_m().is_match("void"));
+
+
 
         let idm = id_m();
 
         assert!(idm.is_match("a"));
+    }
+
+    #[test]
+    fn test_all_sets() {
+        use super::{
+            all_char_set,
+            regex2nfa,
+            gen_counter,
+            slash_line_comment_r
+        };
+
+        let mut all = all_char_set();
+        all.exclude_chars("\n\r");
+
+        assert!(all.contains(&'。'));
+
+        let state = regex2nfa(&mut gen_counter(), &slash_line_comment_r());
+        println!("{:?}", state.as_ref().borrow());
+
+        match_with_nfa(&state.as_ref().borrow(), "//a。a");
     }
 }
