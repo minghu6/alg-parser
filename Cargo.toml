@@ -16,6 +16,7 @@ key-set = { path = "../key-set" }
 indexmap = "1.6.*"
 itertools = "0.10.*"
 num = "0.4"
+lazy_static = "1.4.0"
 
 [dependencies.proc_macros]
 package = "alg-parser-proc-macros"

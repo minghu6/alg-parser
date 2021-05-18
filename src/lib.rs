@@ -25,6 +25,7 @@ make_vec_macro_rules!(vecdeq , std::collections::VecDeque, push_back);
 
 
 pub mod utils;
+pub mod state;
 pub mod regex;
 pub mod parser;
 pub mod regex_demo;

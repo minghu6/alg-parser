@@ -1,8 +1,7 @@
 #![allow(dead_code)]
 
-use std::rc::Rc;
-
 use crate::utils::*;
+use crate::state::*;
 use crate::regex::*;
 use crate::{ charset };
 
@@ -71,33 +70,29 @@ fn demo_regex_nfa_dfa() {
 
         // NFA
         let mut nfa_counter = gen_counter();
-        let begin_state = regex2nfa(&mut nfa_counter, &grammar_sample1);
+        let nfa_g = regex2nfa(&mut nfa_counter, &grammar_sample1);
 
-        let begin_state_1 = Rc::clone(&begin_state);
-        let sample1_begin_state_ref = (*begin_state_1).borrow();
         println!("NFA states (grammar1):");
-        println!("{:?}", sample1_begin_state_ref);
+        println!("{}", nfa_g);
 
-        match_with_nfa(&sample1_begin_state_ref, "int");
-        match_with_nfa(&sample1_begin_state_ref, "intA");
-        match_with_nfa(&sample1_begin_state_ref, "23");
-        match_with_nfa(&sample1_begin_state_ref, "0A");
+        str_full_match_with_nfa(&nfa_g, "int");   // t
+        str_full_match_with_nfa(&nfa_g, "intA");  // t
+        str_full_match_with_nfa(&nfa_g, "23");    // t
+        str_full_match_with_nfa(&nfa_g, "0A");    // f
 
         // DFA
-        let mut dfa_counter = gen_counter();
-        let alphabet = charset! { a-z | A-Z | 0-9 };
+        let dfa_g = DFAStateGraph::from_nfa_graph(
+            nfa_g.clone(),
+            Box::new(ascii_charset()),
+            CharSet::new_getter
+        );
 
-        let begin_state_2 = Rc::clone(&begin_state);
-        let dfa_states = nfa2dfa(&mut dfa_counter, begin_state_2, &alphabet);
-        let begin_dfa_state_1 = dfa_states;
+        println!("{}", dfa_g);
 
-        let begin_dfa_state_1_ref = (*begin_dfa_state_1).borrow();
-        println!("{:?}", begin_dfa_state_1_ref);
-
-        match_with_dfa(&begin_dfa_state_1_ref, "int");
-        match_with_dfa(&begin_dfa_state_1_ref, "intA");
-        match_with_dfa(&begin_dfa_state_1_ref, "23");
-        match_with_dfa(&begin_dfa_state_1_ref, "0A");
+        str_full_match_with_dfa(&dfa_g, "int");
+        str_full_match_with_dfa(&dfa_g, "intA");
+        str_full_match_with_dfa(&dfa_g, "23");
+        str_full_match_with_dfa(&dfa_g, "0A");
     }
 
     fn display_sample_2() {
@@ -109,31 +104,27 @@ fn demo_regex_nfa_dfa() {
 
         // NFA
         let mut nfa_counter = gen_counter();
-        let begin_state = regex2nfa(&mut nfa_counter, &grammar_sample2);
+        let nfa_g = regex2nfa(&mut nfa_counter, &grammar_sample2);
 
-        let begin_state_2 = Rc::clone(&begin_state);
-        let sample2_begin_state_ref = (*begin_state_2).borrow();
         println!("NFA states (grammar2):");
-        println!("{:?}", sample2_begin_state_ref);
+        println!("{}", nfa_g);
 
-        match_with_nfa(&sample2_begin_state_ref, "abc");
-        match_with_nfa(&sample2_begin_state_ref, "abcbbbcbc");
-        match_with_nfa(&sample2_begin_state_ref, "abde");
+        str_full_match_with_nfa(&nfa_g, "abc");        // t
+        str_full_match_with_nfa(&nfa_g, "abcbbbcbc");  // t
+        str_full_match_with_nfa(&nfa_g, "abde");       // f
 
         // DFA
-        let mut dfa_counter = gen_counter();
-        let alphabet = charset! { a-z | A-Z | 0-9 };
+        let dfa_g = DFAStateGraph::from_nfa_graph(
+            nfa_g.clone(),
+            Box::new(ascii_charset()),
+            CharSet::new_getter
+        );
 
-        let begin_state_2 = Rc::clone(&begin_state);
-        let dfa_states = nfa2dfa(&mut dfa_counter, begin_state_2, &alphabet);
-        let begin_dfa_state_2 = dfa_states;
+        println!("{}", dfa_g);
 
-        let begin_dfa_state_2_ref = (*begin_dfa_state_2).borrow();
-        println!("{:?}", begin_dfa_state_2_ref);
-
-        match_with_dfa(&begin_dfa_state_2_ref, "abc");
-        match_with_dfa(&begin_dfa_state_2_ref, "abcbbbcbc");
-        match_with_dfa(&begin_dfa_state_2_ref, "abde");
+        str_full_match_with_dfa(&dfa_g, "abc");
+        str_full_match_with_dfa(&dfa_g, "abcbbbcbc");
+        str_full_match_with_dfa(&dfa_g, "abde");
     }
 
     display_sample_1();
