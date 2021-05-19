@@ -25,8 +25,10 @@ make_vec_macro_rules!(vecdeq , std::collections::VecDeque, push_back);
 
 
 pub mod utils;
-pub mod state;
+pub mod algs;
 pub mod regex;
+pub mod dsl;
+pub mod lexer;
 pub mod parser;
 pub mod regex_demo;
 pub mod parser_demo;

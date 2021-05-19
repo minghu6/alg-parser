@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::utils::*;
-use crate::state::*;
+use crate::algs::state::*;
 use crate::regex::*;
 use crate::{ charset };
 

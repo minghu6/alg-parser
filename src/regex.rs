@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::{ VecDeque}, fmt, hash::{Hash}, iter::Into
 
 use itertools::Itertools;
 
-use super::state::*;
+use super::algs::state::*;
 use super::utils::{char_dec, char_inc, char_range, gen_counter, CounterType};
 
 ///! 因为只有一套实现(起码我开始写的时候是这么认为的，汗)，所以不需要定义接口
