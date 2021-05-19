@@ -21,15 +21,18 @@ use crate::utils::{CounterType, gen_counter};
 */
 
 
-pub trait StateData<P> : fmt::Display {
+pub trait TransData<E, P> : fmt::Display {
     fn is_match(&self, pat: &P) -> bool;
 
-    fn insert(&mut self, pat: P);
+    /// if pat doesn't exist return true else false
+    fn insert(&mut self, pat: E) -> bool;
+
+    fn item2pat(&self, e: &E) -> P;
 }
 
 
-pub trait AlphabetSet<P> {
-    fn iter(&self) -> vec::IntoIter<P>;
+pub trait AlphabetSet<T> {
+    fn iter(&self) -> vec::IntoIter<T>;
 }
 
 
@@ -48,17 +51,17 @@ pub trait AlphabetSet<P> {
 ///
 /// P: Pattern type of matcher of transition
 #[derive(Clone, Debug)]
-pub struct StateGraph<P> {
+pub struct StateGraph<E, P> {
     pub name: String,  // just for identity, temporarily.
-    pub states: Vec<Rc<RefCell<State<P>>>>
+    pub states: Vec<Rc<RefCell<State<E, P>>>>
 }
 
-impl <P> StateGraph<P> {
-    pub fn top(&self) -> Option<&Rc<RefCell<State<P>>>> {
+impl <E, P> StateGraph<E, P> {
+    pub fn top(&self) -> Option<&Rc<RefCell<State<E, P>>>> {
         self.states.first()
     }
 
-    pub fn tail(&self) -> Option<&Rc<RefCell<State<P>>>> {
+    pub fn tail(&self) -> Option<&Rc<RefCell<State<E, P>>>> {
         self.states.last()
     }
 
@@ -66,7 +69,7 @@ impl <P> StateGraph<P> {
     /// (don't extend states)
     pub fn just_concat(
         self,
-        to_graph: &StateGraph<P>,
+        to_graph: &StateGraph<E, P>,
     )
     {
         let from_end_state = self.tail().unwrap();
@@ -80,7 +83,7 @@ impl <P> StateGraph<P> {
     }
 }
 
-impl <P> fmt::Display for StateGraph<P> {
+impl <E, P> fmt::Display for StateGraph<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.top().unwrap().as_ref().borrow())
     }
@@ -90,13 +93,13 @@ impl <P> fmt::Display for StateGraph<P> {
 /// State： (AKA NFA State)
 
 #[derive(Clone)]
-pub struct State<P> {
+pub struct State<E, P> {
     pub id: usize,
     pub acceptable: bool,
-    pub transitions: Vec<Transition<P>>,
+    pub transitions: Vec<Transition<E, P>>,
 }
 
-impl <P> State<P> {
+impl <E, P> State<E, P> {
     ///
     /// Static Create Method
     ///
@@ -118,7 +121,7 @@ impl <P> State<P> {
     ///
     /// Instance Update Method
     ///
-    pub fn insert_transition(&mut self, transition: Transition<P>) {
+    pub fn insert_transition(&mut self, transition: Transition<E, P>) {
         self.transitions.push(transition)
     }
 
@@ -191,22 +194,22 @@ impl <P> State<P> {
 }
 
 /// Hash
-impl <P> hash::Hash for State<P> {
+impl <E, P> hash::Hash for State<E, P> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.id)
     }
 }
 
-impl <P> PartialEq<State<P>> for State<P> {
+impl <E, P> PartialEq<State<E, P>> for State<E, P> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl <P> Eq for State<P> {}
+impl <E, P> Eq for State<E, P> {}
 
 /// Show one state
-impl <P> fmt::Display for State<P> {
+impl <E, P> fmt::Display for State<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut show_str = String::from(format!("{}", self.id));
 
@@ -238,7 +241,7 @@ impl <P> fmt::Display for State<P> {
 }
 
 /// Show full state
-impl <P> fmt::Debug for State<P> {
+impl <E, P> fmt::Debug for State<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut visited_states = hashset!();
 
@@ -252,13 +255,13 @@ impl <P> fmt::Debug for State<P> {
 
 ////////////////////////////////////////////////////////////////////////////////
 //// State Transition
-pub struct Transition<P> {
-    pub data: Option<Rc<dyn StateData<P>>>,
-    pub to_state: Weak<RefCell<State<P>>>,
+pub struct Transition<E, P> {
+    pub data: Option<Rc<dyn TransData<E, P>>>,
+    pub to_state: Weak<RefCell<State<E, P>>>,
 }
 
-impl <P> Transition<P> {
-    pub fn epsilon(to_state: Weak<RefCell<State<P>>>) -> Self
+impl <E, P> Transition<E, P> {
+    pub fn epsilon(to_state: Weak<RefCell<State<E, P>>>) -> Self
     {
         Self {
             data: None,
@@ -283,7 +286,7 @@ impl <P> Transition<P> {
     }
 }
 
-impl <P> Clone for Transition<P> {
+impl <E, P> Clone for Transition<E, P> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -292,7 +295,7 @@ impl <P> Clone for Transition<P> {
     }
 }
 
-impl <P> fmt::Display for Transition<P> {
+impl <E, P> fmt::Display for Transition<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.data {
             None => {
@@ -309,26 +312,28 @@ impl <P> fmt::Display for Transition<P> {
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFA State Graph: 建立在普通的State(NFA State)的集合的基础之上
 #[derive(Clone, Debug)]
-pub struct DFAStateGraph<P> {
+pub struct DFAStateGraph<E, P> {
     name: String,  // just for identity, temporarily.
-    _nfa_states: Vec<Rc<RefCell<State<P>>>>,
-    states: Vec<Rc<RefCell<DFAState<P>>>>
+    _nfa_states: Vec<Rc<RefCell<State<E, P>>>>,
+    states: Vec<Rc<RefCell<DFAState<E, P>>>>
 }
 
-impl <P> DFAStateGraph<P> {
-    pub fn top(&self) -> Option<&Rc<RefCell<DFAState<P>>>> {
+impl <E, P> DFAStateGraph<E, P> {
+    pub fn top(&self) -> Option<&Rc<RefCell<DFAState<E, P>>>> {
         self.states.first()
     }
 
-    pub fn tail(&self) -> Option<&Rc<RefCell<DFAState<P>>>> {
+    pub fn tail(&self) -> Option<&Rc<RefCell<DFAState<E, P>>>> {
         self.states.last()
     }
+}
 
+impl <E, P> DFAStateGraph<E, P> {
     /// NFA to DFA
     pub fn from_nfa_graph(
-        nfa_g: StateGraph<P>,
-        alphabet: Box<dyn AlphabetSet<P>>,
-        empty_set_getter: impl Fn() -> Rc<RefCell<dyn StateData<P>>>
+        nfa_g: StateGraph<E, P>,
+        alphabet: Box<dyn AlphabetSet<E>>,
+        empty_set_getter: impl Fn() -> Rc<RefCell<dyn TransData<E, P>>>
     ) -> Self
     {
         let begin_state = nfa_g.top().unwrap();
@@ -347,9 +352,9 @@ impl <P> DFAStateGraph<P> {
         ))); // state set => dfa state
 
         // 保存每次计算出的新的states_set
-        let mut new_dfa_state_vec = Vec::<Rc<RefCell<DFAState<P>>>>::new();
+        let mut new_dfa_state_vec = Vec::<Rc<RefCell<DFAState<E, P>>>>::new();
         // 保存所有已计算的dfa state
-        let mut dfa_states_vec = Vec::<Rc<RefCell<DFAState<P>>>>::new();
+        let mut dfa_states_vec = Vec::<Rc<RefCell<DFAState<E, P>>>>::new();
         dfa_states_vec.push(Rc::clone(&cur_dfa_state));
         new_dfa_state_vec.push(Rc::clone(&cur_dfa_state));
 
@@ -362,8 +367,12 @@ impl <P> DFAStateGraph<P> {
                     let taken_states_set
                     = Rc::clone(&(*taken_state).borrow().states);
 
+                    let statedata = empty_set_getter();
+                    let pat = statedata.as_ref().borrow().item2pat(&c);
+
                     // move(s, c)
-                    let next_states_set = r#move(Rc::clone(&taken_states_set), &c);
+                    let next_states_set
+                    = r#move(Rc::clone(&taken_states_set), &pat);
 
                     if (*next_states_set).borrow().is_empty() {
                         continue;
@@ -389,7 +398,7 @@ impl <P> DFAStateGraph<P> {
                                 .has_transition(Rc::downgrade(&next_dfa_state))
                             {
                                 let trans = DFATransition::new(
-                                    empty_set_getter(),
+                                    statedata,
                                     Rc::downgrade(&next_dfa_state)
                                 );
                                 taken_state.as_ref().borrow_mut().insert_transition(trans);
@@ -408,7 +417,7 @@ impl <P> DFAStateGraph<P> {
                             (*taken_state)
                                 .borrow_mut()
                                 .insert_transition(DFATransition::new(
-                                    empty_set_getter(),
+                                    statedata,
                                     Rc::downgrade(&new_dfa_state))
                                 );
 
@@ -429,7 +438,7 @@ impl <P> DFAStateGraph<P> {
     }
 }
 
-impl <P> fmt::Display for DFAStateGraph<P> {
+impl <E, P> fmt::Display for DFAStateGraph<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.top().unwrap().as_ref().borrow())
     }
@@ -438,29 +447,29 @@ impl <P> fmt::Display for DFAStateGraph<P> {
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFA State: 建立在普通的State(NFA State)的集合的基础之上
 
-pub type StatesSet<P> = KeyHashSet<Weak<RefCell<State<P>>>, usize>;
+pub type StatesSet<E, P> = KeyHashSet<Weak<RefCell<State<E, P>>>, usize>;
 
 
-pub struct DFAState<P> {
+pub struct DFAState<E, P> {
     pub id: usize,
-    pub states: Rc<RefCell<StatesSet<P>>>,
-    pub transitions: Vec<DFATransition<P>>,
+    pub states: Rc<RefCell<StatesSet<E, P>>>,
+    pub transitions: Vec<DFATransition<E, P>>,
 }
 
-impl <P> DFAState<P> {
-    pub fn dfa_states_get_key(x: &Weak<RefCell<DFAState<P>>>) -> usize {
+impl <E, P> DFAState<E, P> {
+    pub fn dfa_states_get_key(x: &Weak<RefCell<DFAState<E, P>>>) -> usize {
         (*x.upgrade().unwrap()).borrow().id
     }
 
-    pub fn states_set_getkey(x: &Weak<RefCell<State<P>>>) -> usize {
+    pub fn states_set_getkey(x: &Weak<RefCell<State<E, P>>>) -> usize {
         (*x.upgrade().unwrap()).borrow().id
     }
 
-    pub fn new_key_set() -> Rc<RefCell<StatesSet<P>>> {
+    pub fn new_key_set() -> Rc<RefCell<StatesSet<E, P>>> {
         Rc::new(RefCell::new(KeyHashSet::new(DFAState::states_set_getkey)))
     }
 
-    pub fn from_counter_states(counter: &mut CounterType, states: Rc<RefCell<StatesSet<P>>>) -> Self {
+    pub fn from_counter_states(counter: &mut CounterType, states: Rc<RefCell<StatesSet<E, P>>>) -> Self {
         Self {
             id: counter(),
             states,
@@ -475,11 +484,11 @@ impl <P> DFAState<P> {
             .any(|state| (*state.upgrade().unwrap()).borrow().can_reach_acceptable_state())
     }
 
-    pub fn insert_transition(&mut self, transition: DFATransition<P>) {
+    pub fn insert_transition(&mut self, transition: DFATransition<E, P>) {
         self.transitions.push(transition)
     }
 
-    pub fn has_transition(&self, to_state: Weak<RefCell<DFAState<P>>>) -> bool {
+    pub fn has_transition(&self, to_state: Weak<RefCell<DFAState<E, P>>>) -> bool {
         self.transitions
             .iter()
             .any(|trans|
@@ -520,17 +529,17 @@ impl <P> DFAState<P> {
 }
 
 /// Hash
-impl <P> hash::Hash for DFAState<P> {
+impl <E, P> hash::Hash for DFAState<E, P> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.id)
     }
 }
 
-impl <P> Eq for DFAState<P> {}
+impl <E, P> Eq for DFAState<E, P> {}
 
 /// DFAState 比较相等根据它所包含的State
 /// 而State 比较相等根据它的id
-impl <P> PartialEq for DFAState<P> {
+impl <E, P> PartialEq for DFAState<E, P> {
     fn eq(&self, other: &Self) -> bool {
         let state_keyset = (*self.states).borrow();
         let other_keyset = (*other.states).borrow();
@@ -540,7 +549,7 @@ impl <P> PartialEq for DFAState<P> {
 }
 
 /// Show one state
-impl <P> fmt::Display for DFAState<P> {
+impl <E, P> fmt::Display for DFAState<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut show_str = String::from(format!("({})", self.id));
 
@@ -591,7 +600,7 @@ impl <P> fmt::Display for DFAState<P> {
 }
 
 /// Show full state
-impl <P> fmt::Debug for DFAState<P> {
+impl <E, P> fmt::Debug for DFAState<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut visited_states = hashset!();
 
@@ -606,15 +615,15 @@ impl <P> fmt::Debug for DFAState<P> {
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFATransition
 
-pub struct DFATransition<P> {
-    pub data: Rc<RefCell<dyn StateData<P>>>,
-    pub to_state: Weak<RefCell<DFAState<P>>>,
+pub struct DFATransition<E, P> {
+    pub data: Rc<RefCell<dyn TransData<E, P>>>,
+    pub to_state: Weak<RefCell<DFAState<E, P>>>,
 }
 
-impl <P> DFATransition<P> {
+impl <E, P> DFATransition<E, P> {
     pub fn new(
-        data: Rc<RefCell<dyn StateData<P>>>,
-        to_state: Weak<RefCell<DFAState<P>>>
+        data: Rc<RefCell<dyn TransData<E, P>>>,
+        to_state: Weak<RefCell<DFAState<E, P>>>
     ) -> Self
     {
         Self {
@@ -629,7 +638,7 @@ impl <P> DFATransition<P> {
 }
 
 
-impl <P> Clone for DFATransition<P> {
+impl <E, P> Clone for DFATransition<E, P> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -638,7 +647,7 @@ impl <P> Clone for DFATransition<P> {
     }
 }
 
-impl <P> fmt::Display for DFATransition<P> {
+impl <E, P> fmt::Display for DFATransition<E, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.data.as_ref().borrow())
     }
@@ -654,10 +663,10 @@ impl <P> fmt::Display for DFATransition<P> {
 
 /// 根据to_state查找transition, 没有就创建;
 /// 在这个transition的charset上插入这个字符
-fn insert_pat_on_transition<P>(
-    from_state: Rc<RefCell<DFAState<P>>>,
-    to_state: Rc<RefCell<DFAState<P>>>,
-    c: P,
+fn insert_pat_on_transition<E, P>(
+    from_state: Rc<RefCell<DFAState<E, P>>>,
+    to_state: Rc<RefCell<DFAState<E, P>>>,
+    c: E,
 )
 {
     let from_state_ref = from_state.as_ref().borrow();
@@ -687,10 +696,10 @@ fn insert_pat_on_transition<P>(
 
 
 /// 计算一个State通过 ε 转换所能到达的状态集合，目的是把这个计算的集合加入到缓存集中。
-pub fn single_state_epsilon_states_set<P>(
-    state: Weak<RefCell<State<P>>>,
-    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<P>>>>,
-) -> Rc<RefCell<StatesSet<P>>>
+pub fn single_state_epsilon_states_set<E, P>(
+    state: Weak<RefCell<State<E, P>>>,
+    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<E, P>>>>,
+) -> Rc<RefCell<StatesSet<E, P>>>
 {
     let state_rc = state.upgrade().unwrap();
     let state_ref = (*state_rc).borrow();
@@ -719,10 +728,10 @@ pub fn single_state_epsilon_states_set<P>(
 }
 
 /// 得到一个状态集合的闭包
-fn states_set_epsilon_closure<P>(
-    states_set: Rc<RefCell<StatesSet<P>>>,
-    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<P>>>>,
-) -> Rc<RefCell<StatesSet<P>>> {
+fn states_set_epsilon_closure<E, P>(
+    states_set: Rc<RefCell<StatesSet<E, P>>>,
+    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<E, P>>>>,
+) -> Rc<RefCell<StatesSet<E, P>>> {
     let states_set_ref = (*states_set).borrow();
     let res = DFAState::new_key_set();
     let res_here = Rc::clone(&res);
@@ -740,7 +749,7 @@ fn states_set_epsilon_closure<P>(
 }
 
 /// 从StatesSet到StatesSet， 不直接用DFAState是因为counter有id分配的问题
-fn r#move<P>(s0: Rc<RefCell<StatesSet<P>>>, c: &P) -> Rc<RefCell<StatesSet<P>>> {
+fn r#move<E, P>(s0: Rc<RefCell<StatesSet<E, P>>>, c: &P) -> Rc<RefCell<StatesSet<E, P>>> {
     let s0_states_set_ref = (*s0).borrow();
 
     let mut s1 = KeyHashSet::new(DFAState::states_set_getkey);
@@ -757,10 +766,10 @@ fn r#move<P>(s0: Rc<RefCell<StatesSet<P>>>, c: &P) -> Rc<RefCell<StatesSet<P>>> 
 }
 
 /// find if states_set exists
-fn find_dfa_state_by_states_set<P>(
-    states_set_vec: &Vec<Rc<RefCell<DFAState<P>>>>,
-    target: Rc<RefCell<StatesSet<P>>>,
-) -> Option<Rc<RefCell<DFAState<P>>>> {
+fn find_dfa_state_by_states_set<E, P>(
+    states_set_vec: &Vec<Rc<RefCell<DFAState<E, P>>>>,
+    target: Rc<RefCell<StatesSet<E, P>>>,
+) -> Option<Rc<RefCell<DFAState<E, P>>>> {
     match states_set_vec.iter().find(|&states_set| {
         let dfa_state = (**states_set).borrow();
         let matched = *(*dfa_state.states).borrow() == *(*target).borrow();
@@ -773,7 +782,7 @@ fn find_dfa_state_by_states_set<P>(
 }
 
 ///// Debug tool in NFA2DFA
-// fn display_states_set<P>(states_set: &Rc<RefCell<StatesSet<P>>>) {
+// fn display_states_set<E, P>(states_set: &Rc<RefCell<StatesSet<E, P>>>) {
 //     let states_set = states_set.as_ref().borrow();
 //     let states_set_ref = (*states_set).borrow();
 

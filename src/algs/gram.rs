@@ -1,14 +1,11 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    fmt, iter,
-    rc::Rc,
-    vec,
-};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt, rc::Rc, vec, iter};
 
 use indexmap::{indexmap, indexset, IndexMap, IndexSet};
+use itertools::Itertools;
 
 use crate::utils::Stack;
+
+use super::state::TransData;
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Grammar Symbol
@@ -300,6 +297,13 @@ impl Gram {
         }
     }
 
+    pub fn start_prod(&self) -> Option<&GramProd> {
+        match self.productions.get_index(0) {
+            Some(prod) => Some(prod),
+            None => None,
+        }
+    }
+
     pub fn sym_has_epsilon(&self, sym: &GramSym) -> bool {
         self.productions
             .iter()
@@ -460,6 +464,15 @@ impl Gram {
         res.extend_one((PredSetSym::EndMarker, endmark_set));
 
         res
+    }
+
+    /// 性能上可能应该需要一个Iterator Wrapper
+    pub fn find_prod(&self, lhs: &GramSym)
+    -> Vec<GramProd>
+    {
+        self.productions.iter().filter( |prod: &&GramProd| {
+            &prod.0 == lhs
+        }).cloned().collect_vec()
     }
 }
 
@@ -625,12 +638,161 @@ impl iter::IntoIterator for Gram {
     }
 }
 
-///
-pub struct LRItem {
-    pub prod: GramProd,
-    pub pos: usize, // dot pos in right side gram str
+
+
+/// LR0Item: LR(0) Item
+#[derive(Hash, PartialEq, Eq)]
+pub struct LR0Item {
+    prod: GramProd,
+    pos: usize,  // dot pos in right side gram str
 }
 
+impl LR0Item {
+    pub fn from_prod(prod: GramProd) -> Self {
+        Self {
+            prod,
+            pos: 0
+        }
+    }
+
+    /// the right hand side symbol immediately follows dot
+    /// None indicated that dot points to the end
+    pub fn rhs_sym(&self) -> Option<&GramSym> {
+        let symstr = &self.prod.1;
+
+        if let GramSymStr::Str(normal_vec) = symstr {
+            if self.pos < normal_vec.len() {
+                Some(&normal_vec[self.pos])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn inc(&mut self) {
+        if let Some(_) = self.rhs_sym() {
+            self.pos += 1;
+        }
+    }
+
+    pub fn lhs_sym(&self) -> &GramSym {
+        &self.prod.0
+    }
+
+    pub fn dump(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (lhs, rhs) = &self.prod;
+        write!(f, "{}: ", lhs)?;
+        if let GramSymStr::Str(symstr) = rhs {
+            let mut str_vec = symstr.iter().map(|sym| format!("{}", sym)).collect_vec();
+            str_vec.insert(self.pos, "\u{00B7}".to_string());
+            write!(f, "{}", str_vec.join(" "))
+        } else {
+            write!(f, "ε")
+        }
+    }
+}
+
+impl fmt::Debug for LR0Item {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.dump(f)
+    }
+}
+
+impl fmt::Display for LR0Item {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.dump(f)
+    }
+}
+
+
+/// _LR0Closure
+type _LR0Closure = IndexSet<LR0Item>;
+
+/// LR0Closure
+pub struct LR0Closure {
+    _closure: Rc<RefCell<_LR0Closure>>
+}
+
+impl From<_LR0Closure> for  LR0Closure {
+    fn from(set: _LR0Closure) -> Self {
+        Self {
+            _closure: Rc::new(RefCell::new(set))
+        }
+    }
+}
+
+
+impl fmt::Display for LR0Closure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let set = self._closure.as_ref().borrow();
+
+        for item in set.iter() {
+            write!(f, "{}", item)?
+        }
+
+        Ok(())
+    }
+}
+
+// impl TransData<LR0Item, GramSym> for LR0Closure {
+//     fn insert(&mut self, pat: LR0Item) -> bool {
+//         self._closure.as_ref().borrow_mut().insert(pat)
+//     }
+
+//     fn is_match(&self, pat: &GramSym) -> bool {
+//         self
+//     }
+
+//     fn item2pat(&self, e: E) -> P {
+
+//     }
+// }
+
+/*
+* Impl Gram for LR0
+*/
+impl Gram {
+    pub fn lr0closure(&self, items: impl Iterator<Item=LR0Item>) -> LR0Closure {
+        let mut closure = indexset! {};
+
+        //closure.extend(items);
+
+        let mut new_item_vec = vec![];
+        new_item_vec.extend(items);
+
+        while !new_item_vec.is_empty() {
+            let wait_for_calc = new_item_vec;
+            new_item_vec = vec![];
+
+            for closure_item in wait_for_calc.into_iter() {
+                if let Some(rhs) = closure_item.rhs_sym() {
+                    if rhs.is_nonterminal() {
+                        new_item_vec.extend(
+                            self.find_prod(&rhs)
+                            .into_iter()
+                            .map(|prod| LR0Item::from_prod(prod))
+                            .filter(|item| !closure.contains(item))
+                        )
+                    }
+                }
+
+                closure.insert(closure_item);
+            }
+        }
+
+        LR0Closure::from(closure)
+    }
+
+    pub fn start_item(&self) -> Option<LR0Item> {
+        if let Some(prod) = self.start_prod() {
+            return Some(LR0Item::from_prod(prod.clone()))
+        }
+
+        None
+    }
+}
 
 #[cfg(test)]
 #[allow(non_snake_case)]
@@ -825,4 +987,33 @@ mod test {
             debug_assert_eq!(g3_follow_sets.get(sym).unwrap(), follset);
         }
     }
+
+    #[test]
+    fn test_lr0() {
+        declare_nonterminal! {E, E1, T, F};
+        declare_terminal! {mul, add, n, lparen, rparen};
+
+        let gram = grammar![G|
+            E1:
+            | E;
+
+            E:
+            | T;
+            | E add T;
+
+            T:
+            | F;
+            | T mul F;
+
+            F:
+            | n;
+            | lparen E rparen;
+        |];
+
+        let start_set = vec![gram.start_item().unwrap()];
+        let closure = gram.lr0closure(start_set.into_iter());
+
+        println!("{}", closure);
+    }
+
 }

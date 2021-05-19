@@ -47,7 +47,7 @@ impl CharSet {
         }
     }
 
-    pub fn new_getter() -> Rc<RefCell<dyn StateData<char>>> {
+    pub fn new_getter() -> Rc<RefCell<dyn TransData<char, char>>> {
         Rc::new(RefCell::new(Self::new()))
     }
 
@@ -68,6 +68,7 @@ impl CharSet {
     }
 
     pub fn insert_scope(&mut self, char_scope: (char, char)) {
+
         self.char_scopes.push(char_scope); // push return ()
         self.compress(); // 每次都压缩可能不太合适
     }
@@ -296,13 +297,22 @@ impl AlphabetSet<char> for CharSet {
     }
 }
 
-impl StateData<char> for CharSet {
+impl TransData<char, char> for CharSet {
     fn is_match(&self, pat: &char) -> bool {
         self.contains(pat)
     }
 
-    fn insert(&mut self, pat: char) {
-        self.insert_scope((pat, pat))
+    fn insert(&mut self, pat: char) -> bool {
+        if self.contains(&pat) {
+            return false;
+        }
+
+        self.insert_scope((pat, pat));
+        true
+    }
+
+    fn item2pat(&self, e: &char) -> char {
+        e.to_owned()
     }
 }
 
@@ -465,11 +475,11 @@ macro_rules! simple_regex {
 ////////////////////////////////////////////////////////////////////////////////
 //// Converter
 
-pub fn regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char> {
+pub fn regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char> {
     _regex2nfa(counter, node)
 }
 
-fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char> {
+fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char> {
     let mut states_vec = vec![];
     let (mut begin_state, mut end_state);
 
@@ -504,7 +514,7 @@ fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char> {
 
         RegexNodeType::And => {
             // 各个转移状态前后相连
-            let sub_graphs: Vec<StateGraph<char>> = node
+            let sub_graphs: Vec<StateGraph<char, char>> = node
                 .childen
                 .iter()
                 .map(|child| _regex2nfa(counter, child))
@@ -613,7 +623,7 @@ pub enum MatchResult<S> {
 
 
 // Do NFA match
-pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char>, input: &str) -> bool {
+pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char, char>, input: &str) -> bool {
     // #[cfg(debug_assertions)]
     // println!("NFA matching: {} ", input);
 
@@ -632,7 +642,7 @@ pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char>, input: &str) -> bool {
 }
 
 
-pub fn match_with_nfa<P>(nfa_g: &StateGraph<P>, input: &[P]) -> MatchResult<State<P>> {
+pub fn match_with_nfa<E, P>(nfa_g: &StateGraph<E, P>, input: &[P]) -> MatchResult<State<E, P>> {
     let state = nfa_g.top().unwrap();
 
     if input.is_empty() {
@@ -661,8 +671,8 @@ pub fn match_with_nfa<P>(nfa_g: &StateGraph<P>, input: &[P]) -> MatchResult<Stat
 }
 
 
-fn _match_with_nfa<P>(state_rc: Rc<RefCell<State<P>>>, chars_input: &[P], init_index: usize)
--> (Rc<RefCell<State<P>>>, usize)
+fn _match_with_nfa<E, P>(state_rc: Rc<RefCell<State<E, P>>>, chars_input: &[P], init_index: usize)
+-> (Rc<RefCell<State<E, P>>>, usize)
 {
     let cloned_state_rc = state_rc.clone();
     let state = cloned_state_rc.as_ref().borrow();
@@ -705,7 +715,7 @@ fn _match_with_nfa<P>(state_rc: Rc<RefCell<State<P>>>, chars_input: &[P], init_i
 }
 
 /// Do DFA match
-pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char>, input: &str) -> bool {
+pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char, char>, input: &str) -> bool {
     #[cfg(debug_assertions)]
     println!("DFA matching: {} ", input);
 
@@ -726,7 +736,7 @@ pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char>, input: &str) -> bool
 }
 
 
-pub fn match_with_dfa<P>(dfa_g: &DFAStateGraph<P>, input: &[P]) -> MatchResult<DFAState<P>> {
+pub fn match_with_dfa<E, P>(dfa_g: &DFAStateGraph<E, P>, input: &[P]) -> MatchResult<DFAState<E, P>> {
     let state = dfa_g.top().unwrap();
 
     if input.is_empty() {
@@ -753,11 +763,11 @@ pub fn match_with_dfa<P>(dfa_g: &DFAStateGraph<P>, input: &[P]) -> MatchResult<D
     return MatchResult::Unfinished(state.clone());
 }
 
-fn _match_with_dfa<P>(
-    state_rc: Rc<RefCell<DFAState<P>>>,
+fn _match_with_dfa<E, P>(
+    state_rc: Rc<RefCell<DFAState<E, P>>>,
     chars_input: &[P],
     init_index: usize,
-) -> (Rc<RefCell<DFAState<P>>>, usize)
+) -> (Rc<RefCell<DFAState<E, P>>>, usize)
 {
     let state_rc_cloned = state_rc.clone();
     let state = state_rc_cloned.as_ref().borrow();
@@ -814,11 +824,11 @@ pub fn ascii_charset() -> CharSet {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Primitive Regex Matcher using NFA State<char>
+/// Primitive Regex Matcher using NFA State<char, char>
 #[derive(Clone, Debug)]
 pub struct NFAMatcher {
     name: String,
-    state_g: StateGraph<char>,
+    state_g: StateGraph<char, char>,
 }
 
 impl NFAMatcher {
@@ -843,11 +853,11 @@ impl TokenMatcher for NFAMatcher {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Primitive Regex Matcher using DFA State<char>
+/// Primitive Regex Matcher using DFA State<char, char>
 #[derive(Clone, Debug)]
 pub struct DFAMatcher {
     name: String,
-    state_g: DFAStateGraph<char>,
+    state_g: DFAStateGraph<char, char>,
 }
 
 impl DFAMatcher {
@@ -1113,8 +1123,7 @@ pub fn slash_line_comment_r() -> RegexNode {
     root
 }
 
-/// 就远匹配而不是就近匹配，因为我们这个弱鸡的正则匹配不支持序列or
-/// 也许我应该去看看实现一个正则表达式库
+/// 就远匹配而不是就近匹配 FIXME: 仿照strlit_r实现
 pub fn slash_block_comment_r() -> RegexNode {
     let escape_charset = all_char_set();
     let anybut_node = RegexNode::from_charset_repeat_times(escape_charset, (0, usize::MAX));
