@@ -3,9 +3,23 @@ use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt, rc::Rc, vec, iter
 use indexmap::{indexmap, indexset, IndexMap, IndexSet};
 use itertools::Itertools;
 
-use crate::utils::Stack;
+use crate::stack;
 
-use super::state::TransData;
+use super::
+{
+    super:: {
+        utils::{
+            Stack,
+            gen_counter
+        }
+    },
+    state::{
+        DFAStateGraph,
+        TransData,
+        DFAState,
+        DFATransition
+    }
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Grammar Symbol
@@ -641,7 +655,7 @@ impl iter::IntoIterator for Gram {
 
 
 /// LR0Item: LR(0) Item
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub struct LR0Item {
     prod: GramProd,
     pos: usize,  // dot pos in right side gram str
@@ -671,10 +685,16 @@ impl LR0Item {
         }
     }
 
-    pub fn inc(&mut self) {
+    pub fn do_inc(&mut self) {
         if let Some(_) = self.rhs_sym() {
             self.pos += 1;
         }
+    }
+
+    pub fn inc(&self) -> Self {
+        let mut other = self.clone();
+        other.do_inc();
+        other
     }
 
     pub fn lhs_sym(&self) -> &GramSym {
@@ -711,11 +731,68 @@ impl fmt::Display for LR0Item {
 type _LR0Closure = IndexSet<LR0Item>;
 
 /// LR0Closure
+#[derive(Clone)]
 pub struct LR0Closure {
     _closure: Rc<RefCell<_LR0Closure>>
 }
 
-impl From<_LR0Closure> for  LR0Closure {
+impl LR0Closure {
+    pub fn new() -> Self {
+        Self {
+            _closure: Rc::new(RefCell::new(
+                indexset! {}
+            ))
+        }
+    }
+
+    pub fn inner_closure(&self) -> Rc<RefCell<_LR0Closure>> {
+        self._closure.clone()
+    }
+
+    /// collect all sym pointed by dot
+    /// including terminal and nonterminal, end will be filt out
+    pub fn dot_syms(&self) -> Vec<GramSym> {
+        let closure = self._closure.as_ref().borrow();
+
+        closure.iter()
+        .filter_map(|item| item.rhs_sym())
+        .cloned()
+        .collect_vec()
+    }
+
+    pub fn dot_nonterm_syms(&self) -> Vec<GramSym> {
+        self.dot_syms().into_iter()
+        .filter(|sym| sym.is_nonterminal())
+        .collect_vec()
+    }
+
+    pub fn insert_item(&mut self, item: LR0Item) -> bool {
+        self._closure.as_ref().borrow_mut().insert(item)
+    }
+
+    pub fn next_sym_closures(&self) -> Vec<(GramSym, Vec<LR0Item>)> {
+        let mut sym_closures = indexmap! {};
+
+        for item in self._closure.as_ref().borrow().iter() {
+            if let Some(sym) = item.rhs_sym() {
+                if !sym_closures.contains_key(sym) {
+                    sym_closures.insert(sym.clone(), vec![]);
+                }
+
+                let closure = sym_closures.get_mut(sym).unwrap();
+
+                closure.push(item.inc());
+            }
+        }
+
+        sym_closures
+        .into_iter()
+        .collect_vec()
+    }
+}
+
+
+impl From<_LR0Closure> for LR0Closure {
     fn from(set: _LR0Closure) -> Self {
         Self {
             _closure: Rc::new(RefCell::new(set))
@@ -723,32 +800,42 @@ impl From<_LR0Closure> for  LR0Closure {
     }
 }
 
-
 impl fmt::Display for LR0Closure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let set = self._closure.as_ref().borrow();
 
         for item in set.iter() {
-            write!(f, "{}", item)?
+            writeln!(f, "{}", item)?
         }
 
         Ok(())
     }
 }
 
-// impl TransData<LR0Item, GramSym> for LR0Closure {
-//     fn insert(&mut self, pat: LR0Item) -> bool {
-//         self._closure.as_ref().borrow_mut().insert(pat)
-//     }
+impl PartialEq for LR0Closure {
+    fn eq(&self, other: &Self) -> bool {
+        *self._closure.as_ref().borrow() == *other.inner_closure().as_ref().borrow()
+    }
+}
 
-//     fn is_match(&self, pat: &GramSym) -> bool {
-//         self
-//     }
+/*
+* For LR(0) Finite State Machine (FSM)
+*/
 
-//     fn item2pat(&self, e: E) -> P {
+impl TransData<LR0Closure, GramSym, GramSym> for GramSym {
+    fn insert(&mut self, _pat: GramSym) -> bool {
+        unreachable!();
+    }
 
-//     }
-// }
+    fn is_match(&self, pat: &GramSym) -> bool {
+        self == pat
+    }
+
+    fn item2pat(&self, _e: &GramSym) -> GramSym {
+        unreachable!()
+    }
+}
+
 
 /*
 * Impl Gram for LR0
@@ -792,7 +879,75 @@ impl Gram {
 
         None
     }
+
+    pub fn start_item_closure(&self) -> Option<LR0Closure> {
+        if let Some(start_item) = self.start_item() {
+            let start_set = vec![start_item];
+            return Some(self.lr0closure(start_set.into_iter()))
+        }
+
+        None
+    }
+
+    pub fn lr0_dfa(&self) -> DFAStateGraph<LR0Closure, GramSym, GramSym> {
+        if self.productions.is_empty() {
+            return DFAStateGraph::empty()
+        }
+
+
+        let start_closure = self.start_item_closure().unwrap();
+        let mut counter = gen_counter();
+        let start_state = Rc::new(RefCell::new(
+            DFAState::<LR0Closure, GramSym, GramSym>::from_counter_data(
+                &mut counter, start_closure
+            )
+        ));
+
+        let mut states_coll_vec = vec![start_state.clone()];
+        let mut states_stack
+        = stack![start_state];
+
+        while let Some(cur_state) = states_stack.pop() {
+            let state_rc = cur_state.as_ref().borrow();
+            let state_closure = state_rc.data.data().unwrap().to_owned();
+            drop(state_rc);
+
+            for (sym, items_vec)
+            in state_closure.next_sym_closures().into_iter() {
+                let closure = self.lr0closure(items_vec.into_iter());
+                let found_state;
+
+                if let Some(state)
+                = states_coll_vec.iter().find(|state: &&Rc<RefCell<DFAState<LR0Closure, GramSym, GramSym>>>| {
+                    state.as_ref().borrow().data.data().unwrap() == &closure
+                }) {
+                    found_state = state.to_owned();
+                } else {
+                    found_state = Rc::new(RefCell::new(
+                        DFAState::<LR0Closure, GramSym, GramSym>::from_counter_data(
+                            &mut counter, closure
+                        )
+                    ));
+
+                    states_stack.push(found_state.clone());
+                    states_coll_vec.push(found_state.clone());
+                }
+
+                cur_state.as_ref().borrow_mut().insert_transition(
+                    DFATransition::new(
+                        Rc::new(RefCell::new(sym)),
+                        Rc::downgrade(&found_state)
+                    )
+                );
+            }
+        }
+
+        DFAStateGraph::from(states_coll_vec)
+    }
 }
+
+
+
 
 #[cfg(test)]
 #[allow(non_snake_case)]
@@ -1010,10 +1165,12 @@ mod test {
             | lparen E rparen;
         |];
 
-        let start_set = vec![gram.start_item().unwrap()];
-        let closure = gram.lr0closure(start_set.into_iter());
+        // let start_set = vec![gram.start_item().unwrap()];
+        // let closure = gram.lr0closure(start_set.into_iter());
+        // println!("{}", closure);
 
-        println!("{}", closure);
+        let lr0dfa = gram.lr0_dfa();
+        println!("{}", lr0dfa);
     }
 
 }

@@ -9,6 +9,7 @@ use std::{borrow::Borrow, cell::RefCell, collections::{
 
 };
 
+use itertools::Itertools;
 use key_set::{KeyHashSet, KeySet};
 
 use crate::utils::{CounterType, gen_counter};
@@ -21,13 +22,13 @@ use crate::utils::{CounterType, gen_counter};
 */
 
 
-pub trait TransData<E, P> : fmt::Display {
-    fn is_match(&self, pat: &P) -> bool;
+pub trait TransData<D, TranE, TranP> : fmt::Display {
+    fn is_match(&self, pat: &TranP) -> bool;
 
     /// if pat doesn't exist return true else false
-    fn insert(&mut self, pat: E) -> bool;
+    fn insert(&mut self, pat: TranE) -> bool;
 
-    fn item2pat(&self, e: &E) -> P;
+    fn item2pat(&self, e: &TranE) -> TranP;
 }
 
 
@@ -49,19 +50,19 @@ pub trait AlphabetSet<T> {
 /// `Rc`如其名所说，是一个ref counter的机制（Rc提供strong ref），需要换成`Weak`来避免循环引用导致的内存无法释放（从而造成内存泄漏）。
 /// 但使用weak ref需要在一个地方保存所有图节点的一个strong ref使其不被释放，从这个意义上State Graph struct 具有必要的作用。
 ///
-/// P: Pattern type of matcher of transition
+/// TranP: Pattern type of matcher of transition
 #[derive(Clone, Debug)]
-pub struct StateGraph<E, P> {
+pub struct StateGraph<D, TranE, TranP> {
     pub name: String,  // just for identity, temporarily.
-    pub states: Vec<Rc<RefCell<State<E, P>>>>
+    pub states: Vec<Rc<RefCell<State<D, TranE, TranP>>>>
 }
 
-impl <E, P> StateGraph<E, P> {
-    pub fn top(&self) -> Option<&Rc<RefCell<State<E, P>>>> {
+impl <D, TranE, TranP> StateGraph<D, TranE, TranP> {
+    pub fn top(&self) -> Option<&Rc<RefCell<State<D, TranE, TranP>>>> {
         self.states.first()
     }
 
-    pub fn tail(&self) -> Option<&Rc<RefCell<State<E, P>>>> {
+    pub fn tail(&self) -> Option<&Rc<RefCell<State<D, TranE, TranP>>>> {
         self.states.last()
     }
 
@@ -69,7 +70,7 @@ impl <E, P> StateGraph<E, P> {
     /// (don't extend states)
     pub fn just_concat(
         self,
-        to_graph: &StateGraph<E, P>,
+        to_graph: &StateGraph<D, TranE, TranP>,
     )
     {
         let from_end_state = self.tail().unwrap();
@@ -83,7 +84,7 @@ impl <E, P> StateGraph<E, P> {
     }
 }
 
-impl <E, P> fmt::Display for StateGraph<E, P> {
+impl <D, TranE, TranP> fmt::Display for StateGraph<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.top().unwrap().as_ref().borrow())
     }
@@ -93,13 +94,14 @@ impl <E, P> fmt::Display for StateGraph<E, P> {
 /// State： (AKA NFA State)
 
 #[derive(Clone)]
-pub struct State<E, P> {
+pub struct State<D, TranE, TranP> {
     pub id: usize,
     pub acceptable: bool,
-    pub transitions: Vec<Transition<E, P>>,
+    pub transitions: Vec<Transition<D, TranE, TranP>>,
+    pub data: Option<D>
 }
 
-impl <E, P> State<E, P> {
+impl <D, TranE, TranP> State<D, TranE, TranP> {
     ///
     /// Static Create Method
     ///
@@ -108,6 +110,7 @@ impl <E, P> State<E, P> {
             id: counter(),
             acceptable: false,
             transitions: Vec::new(),
+            data: None
         }
     }
 
@@ -121,7 +124,7 @@ impl <E, P> State<E, P> {
     ///
     /// Instance Update Method
     ///
-    pub fn insert_transition(&mut self, transition: Transition<E, P>) {
+    pub fn insert_transition(&mut self, transition: Transition<D, TranE, TranP>) {
         self.transitions.push(transition)
     }
 
@@ -194,22 +197,22 @@ impl <E, P> State<E, P> {
 }
 
 /// Hash
-impl <E, P> hash::Hash for State<E, P> {
+impl <D, TranE, TranP> hash::Hash for State<D, TranE, TranP> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.id)
     }
 }
 
-impl <E, P> PartialEq<State<E, P>> for State<E, P> {
+impl <D, TranE, TranP> PartialEq<State<D, TranE, TranP>> for State<D, TranE, TranP> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl <E, P> Eq for State<E, P> {}
+impl <D, TranE, TranP> Eq for State<D, TranE, TranP> {}
 
 /// Show one state
-impl <E, P> fmt::Display for State<E, P> {
+impl <D, TranE, TranP> fmt::Display for State<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut show_str = String::from(format!("{}", self.id));
 
@@ -241,7 +244,7 @@ impl <E, P> fmt::Display for State<E, P> {
 }
 
 /// Show full state
-impl <E, P> fmt::Debug for State<E, P> {
+impl <D, TranE, TranP> fmt::Debug for State<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut visited_states = hashset!();
 
@@ -255,13 +258,13 @@ impl <E, P> fmt::Debug for State<E, P> {
 
 ////////////////////////////////////////////////////////////////////////////////
 //// State Transition
-pub struct Transition<E, P> {
-    pub data: Option<Rc<dyn TransData<E, P>>>,
-    pub to_state: Weak<RefCell<State<E, P>>>,
+pub struct Transition<D, TranE, TranP> {
+    pub data: Option<Rc<dyn TransData<D, TranE, TranP>>>,
+    pub to_state: Weak<RefCell<State<D, TranE, TranP>>>,
 }
 
-impl <E, P> Transition<E, P> {
-    pub fn epsilon(to_state: Weak<RefCell<State<E, P>>>) -> Self
+impl <D, TranE, TranP> Transition<D, TranE, TranP> {
+    pub fn epsilon(to_state: Weak<RefCell<State<D, TranE, TranP>>>) -> Self
     {
         Self {
             data: None,
@@ -269,7 +272,7 @@ impl <E, P> Transition<E, P> {
         }
     }
 
-    pub fn is_match(&self, inputc: &P) -> bool {
+    pub fn is_match(&self, inputc: &TranP) -> bool {
         if let Some(matcher) = &self.data {
             matcher.as_ref().is_match(inputc)
         } else {
@@ -286,7 +289,7 @@ impl <E, P> Transition<E, P> {
     }
 }
 
-impl <E, P> Clone for Transition<E, P> {
+impl <D, TranE, TranP> Clone for Transition<D, TranE, TranP> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -295,7 +298,7 @@ impl <E, P> Clone for Transition<E, P> {
     }
 }
 
-impl <E, P> fmt::Display for Transition<E, P> {
+impl <D, TranE, TranP> fmt::Display for Transition<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.data {
             None => {
@@ -312,28 +315,48 @@ impl <E, P> fmt::Display for Transition<E, P> {
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFA State Graph: 建立在普通的State(NFA State)的集合的基础之上
 #[derive(Clone, Debug)]
-pub struct DFAStateGraph<E, P> {
+pub struct DFAStateGraph<D: Dtrait, TranE, TranP> {
     name: String,  // just for identity, temporarily.
-    _nfa_states: Vec<Rc<RefCell<State<E, P>>>>,
-    states: Vec<Rc<RefCell<DFAState<E, P>>>>
+    _nfa_states: Vec<Rc<RefCell<State<D, TranE, TranP>>>>,
+    states: Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>
 }
 
-impl <E, P> DFAStateGraph<E, P> {
-    pub fn top(&self) -> Option<&Rc<RefCell<DFAState<E, P>>>> {
+impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
+    pub fn empty() -> Self {
+        Self {
+            name: "".to_owned(),
+            _nfa_states: vec![],
+            states: vec![]
+        }
+    }
+
+    pub fn top(&self) -> Option<&Rc<RefCell<DFAState<D, TranE, TranP>>>> {
         self.states.first()
     }
 
-    pub fn tail(&self) -> Option<&Rc<RefCell<DFAState<E, P>>>> {
+    pub fn tail(&self) -> Option<&Rc<RefCell<DFAState<D, TranE, TranP>>>> {
         self.states.last()
     }
 }
 
-impl <E, P> DFAStateGraph<E, P> {
+impl <D: Dtrait, TranE, TranP> From<Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>>
+for DFAStateGraph<D, TranE, TranP> {
+    fn from(value: Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>) -> Self {
+        Self {
+            name: "".to_owned(),
+            _nfa_states: vec![],
+            states: value
+        }
+    }
+}
+
+impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
+
     /// NFA to DFA
     pub fn from_nfa_graph(
-        nfa_g: StateGraph<E, P>,
-        alphabet: Box<dyn AlphabetSet<E>>,
-        empty_set_getter: impl Fn() -> Rc<RefCell<dyn TransData<E, P>>>
+        nfa_g: StateGraph<D, TranE, TranP>,
+        alphabet: Box<dyn AlphabetSet<TranE>>,
+        empty_set_getter: impl Fn() -> Rc<RefCell<dyn TransData<D, TranE, TranP>>>
     ) -> Self
     {
         let begin_state = nfa_g.top().unwrap();
@@ -352,9 +375,9 @@ impl <E, P> DFAStateGraph<E, P> {
         ))); // state set => dfa state
 
         // 保存每次计算出的新的states_set
-        let mut new_dfa_state_vec = Vec::<Rc<RefCell<DFAState<E, P>>>>::new();
+        let mut new_dfa_state_vec = Vec::<Rc<RefCell<DFAState<D, TranE, TranP>>>>::new();
         // 保存所有已计算的dfa state
-        let mut dfa_states_vec = Vec::<Rc<RefCell<DFAState<E, P>>>>::new();
+        let mut dfa_states_vec = Vec::<Rc<RefCell<DFAState<D, TranE, TranP>>>>::new();
         dfa_states_vec.push(Rc::clone(&cur_dfa_state));
         new_dfa_state_vec.push(Rc::clone(&cur_dfa_state));
 
@@ -365,7 +388,7 @@ impl <E, P> DFAStateGraph<E, P> {
             for taken_state in wait_for_calc.into_iter() {
                 for c in alphabet.iter() {
                     let taken_states_set
-                    = Rc::clone(&(*taken_state).borrow().states);
+                    = Rc::clone(&(*taken_state).borrow().data.states().unwrap());
 
                     let statedata = empty_set_getter();
                     let pat = statedata.as_ref().borrow().item2pat(&c);
@@ -438,63 +461,142 @@ impl <E, P> DFAStateGraph<E, P> {
     }
 }
 
-impl <E, P> fmt::Display for DFAStateGraph<E, P> {
+impl <D: Dtrait, TranE, TranP> fmt::Display for DFAStateGraph<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.top().unwrap().as_ref().borrow())
+        writeln!(f, "Total {} DFA states:\n", self.states.len())?;
+        writeln!(f, "{}", "-".repeat(80))?;
+
+        for state
+        in self.states.iter().sorted_by_key(
+            |state|
+            state.as_ref().borrow().id
+        ) {
+            write!(f, "{}", state.as_ref().borrow())?;
+            writeln!(f, "{}", "-".repeat(80))?;
+        }
+
+        Ok(())
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFA State: 建立在普通的State(NFA State)的集合的基础之上
 
-pub type StatesSet<E, P> = KeyHashSet<Weak<RefCell<State<E, P>>>, usize>;
+pub type StatesSet<D, TranE, TranP> = KeyHashSet<Weak<RefCell<State<D, TranE, TranP>>>, usize>;
+pub trait Dtrait = PartialEq + fmt::Display;
 
-
-pub struct DFAState<E, P> {
-    pub id: usize,
-    pub states: Rc<RefCell<StatesSet<E, P>>>,
-    pub transitions: Vec<DFATransition<E, P>>,
+/// DFA Data
+pub enum DFAData<D: Dtrait, TranE, TranP> {
+    States(Rc<RefCell<StatesSet<D, TranE, TranP>>>),
+    Data(D)
 }
 
-impl <E, P> DFAState<E, P> {
-    pub fn dfa_states_get_key(x: &Weak<RefCell<DFAState<E, P>>>) -> usize {
+impl <D: Dtrait, TranE, TranP> DFAData<D, TranE, TranP> {
+    pub fn states(&self) -> Option<&Rc<RefCell<StatesSet<D, TranE, TranP>>>> {
+        if let Self::States(states) = self {
+            Some(states)
+        } else {
+            None
+        }
+    }
+
+    pub fn data(&self) -> Option<&D> {
+        if let Self::Data(data) = self {
+            Some(data)
+        } else {
+            None
+        }
+    }
+}
+
+
+
+pub struct DFAState<D: Dtrait, TranE, TranP> {
+    pub id: usize,
+    pub transitions: Vec<DFATransition<D, TranE, TranP>>,
+    pub data: DFAData<D, TranE, TranP>
+}
+
+impl <D: Dtrait, TranE, TranP> DFAState<D, TranE, TranP> {
+    pub fn dfa_states_get_key(x: &Weak<RefCell<DFAState<D, TranE, TranP>>>) -> usize {
         (*x.upgrade().unwrap()).borrow().id
     }
 
-    pub fn states_set_getkey(x: &Weak<RefCell<State<E, P>>>) -> usize {
+    pub fn states_set_getkey(x: &Weak<RefCell<State<D, TranE, TranP>>>) -> usize {
         (*x.upgrade().unwrap()).borrow().id
     }
 
-    pub fn new_key_set() -> Rc<RefCell<StatesSet<E, P>>> {
+    pub fn new_key_set() -> Rc<RefCell<StatesSet<D, TranE, TranP>>> {
         Rc::new(RefCell::new(KeyHashSet::new(DFAState::states_set_getkey)))
     }
 
-    pub fn from_counter_states(counter: &mut CounterType, states: Rc<RefCell<StatesSet<E, P>>>) -> Self {
+    pub fn from_counter_states(counter: &mut CounterType, states: Rc<RefCell<StatesSet<D, TranE, TranP>>>) -> Self {
         Self {
             id: counter(),
-            states,
+            data: DFAData::States(states),
+            transitions: vec![],
+        }
+    }
+
+    pub fn from_counter_data(counter: &mut CounterType, data: D) -> Self {
+        Self {
+            id: counter(),
+            data: DFAData::Data(data),
             transitions: vec![],
         }
     }
 
     pub fn is_acceptable(&self) -> bool {
-        (*self.states)
-            .borrow()
-            .iter()
-            .any(|state| (*state.upgrade().unwrap()).borrow().can_reach_acceptable_state())
+        if let DFAData::States(states) = &self.data {
+            states
+                .as_ref()
+                .borrow()
+                .iter()
+                .any(|state| (*state.upgrade().unwrap()).borrow().can_reach_acceptable_state())
+        } else {
+            true
+        }
     }
 
-    pub fn insert_transition(&mut self, transition: DFATransition<E, P>) {
+    pub fn insert_transition(&mut self, transition: DFATransition<D, TranE, TranP>) {
         self.transitions.push(transition)
     }
 
-    pub fn has_transition(&self, to_state: Weak<RefCell<DFAState<E, P>>>) -> bool {
+    pub fn has_transition(&self, to_state: Weak<RefCell<DFAState<D, TranE, TranP>>>) -> bool {
         self.transitions
             .iter()
             .any(|trans|
                  trans.to_state.upgrade().unwrap() == to_state.upgrade().unwrap())
     }
 
+}
+
+/// Hash
+impl <D: Dtrait, TranE, TranP> hash::Hash for DFAState<D, TranE, TranP> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.id)
+    }
+}
+
+impl <D: Dtrait, TranE, TranP> Eq for DFAState<D, TranE, TranP> {}
+
+/// DFAState 比较相等根据它所包含的State
+/// 而State 比较相等根据它的id
+impl <D: Dtrait, TranE, TranP> PartialEq for DFAState<D, TranE, TranP> {
+    fn eq(&self, other: &Self) -> bool {
+        match &self.data {
+            DFAData::States(states) => {
+                *states.as_ref().borrow() == *other.data.states().unwrap().as_ref().borrow()
+            },
+            DFAData::Data(data) => {
+                *data == *other.data.data().unwrap()
+            }
+        }
+    }
+}
+
+
+impl <D: Dtrait, TranE, TranP> DFAState<D, TranE, TranP> {
     /// Print
     fn dump(
         state: &Self,
@@ -528,28 +630,8 @@ impl <E, P> DFAState<E, P> {
     }
 }
 
-/// Hash
-impl <E, P> hash::Hash for DFAState<E, P> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.id)
-    }
-}
-
-impl <E, P> Eq for DFAState<E, P> {}
-
-/// DFAState 比较相等根据它所包含的State
-/// 而State 比较相等根据它的id
-impl <E, P> PartialEq for DFAState<E, P> {
-    fn eq(&self, other: &Self) -> bool {
-        let state_keyset = (*self.states).borrow();
-        let other_keyset = (*other.states).borrow();
-
-        *state_keyset == *other_keyset
-    }
-}
-
 /// Show one state
-impl <E, P> fmt::Display for DFAState<E, P> {
+impl <D: Dtrait, TranE, TranP> fmt::Display for DFAState<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut show_str = String::from(format!("({})", self.id));
 
@@ -573,34 +655,45 @@ impl <E, P> fmt::Display for DFAState<E, P> {
 
         write!(f, "{}", show_str.as_str()).ok();
 
-        write!(f, "\tNFA states: ",).ok();
-        write!(
-            f,
-            "{}\n",
-            (*(self.states))
-                .borrow()
-                .iter()
-                .map(|state| format!("_{}",
-                    state.upgrade().unwrap().as_ref().borrow().id))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
-        .ok();
+        match &self.data {
+            DFAData::States(states) => {
+                write!(f, "\tNFA states: ",).ok();
+                write!(
+                    f,
+                    "{}\n",
+                    (*states)
+                        .as_ref()
+                        .borrow()
+                        .iter()
+                        .map(|state| format!("_{}",
+                            state.upgrade().unwrap().as_ref().borrow().id))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+                .ok();
 
-        if self.is_acceptable() {
-            writeln!(f, "\t(acceptable)").ok();
+                if self.is_acceptable() {
+                    writeln!(f, "\t(acceptable)").ok();
+                }
+
+                if self.transitions.is_empty() {
+                    writeln!(f, "\t(end)").ok();
+                }
+            },
+            DFAData::Data(data) => {
+                writeln!(f, "DFA data: ")?;
+                writeln!(f, "{}", data)?;
+
+            }
         }
 
-        if self.transitions.is_empty() {
-            writeln!(f, "\t(end)").ok();
-        }
 
         Ok(())
     }
 }
 
 /// Show full state
-impl <E, P> fmt::Debug for DFAState<E, P> {
+impl <D: Dtrait, TranE, TranP> fmt::Debug for DFAState<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut visited_states = hashset!();
 
@@ -615,15 +708,15 @@ impl <E, P> fmt::Debug for DFAState<E, P> {
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFATransition
 
-pub struct DFATransition<E, P> {
-    pub data: Rc<RefCell<dyn TransData<E, P>>>,
-    pub to_state: Weak<RefCell<DFAState<E, P>>>,
+pub struct DFATransition<D: Dtrait, TranE, TranP> {
+    pub data: Rc<RefCell<dyn TransData<D, TranE, TranP>>>,
+    pub to_state: Weak<RefCell<DFAState<D, TranE, TranP>>>,
 }
 
-impl <E, P> DFATransition<E, P> {
+impl <D: Dtrait, TranE, TranP> DFATransition<D, TranE, TranP> {
     pub fn new(
-        data: Rc<RefCell<dyn TransData<E, P>>>,
-        to_state: Weak<RefCell<DFAState<E, P>>>
+        data: Rc<RefCell<dyn TransData<D, TranE, TranP>>>,
+        to_state: Weak<RefCell<DFAState<D, TranE, TranP>>>
     ) -> Self
     {
         Self {
@@ -632,13 +725,13 @@ impl <E, P> DFATransition<E, P> {
         }
     }
 
-    pub fn is_match(&self, inputc: &P) -> bool {
+    pub fn is_match(&self, inputc: &TranP) -> bool {
         self.data.as_ref().borrow().is_match(inputc)
     }
 }
 
 
-impl <E, P> Clone for DFATransition<E, P> {
+impl <D: Dtrait, TranE, TranP> Clone for DFATransition<D, TranE, TranP> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -647,7 +740,7 @@ impl <E, P> Clone for DFATransition<E, P> {
     }
 }
 
-impl <E, P> fmt::Display for DFATransition<E, P> {
+impl <D: Dtrait, TranE, TranP> fmt::Display for DFATransition<D, TranE, TranP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.data.as_ref().borrow())
     }
@@ -663,10 +756,10 @@ impl <E, P> fmt::Display for DFATransition<E, P> {
 
 /// 根据to_state查找transition, 没有就创建;
 /// 在这个transition的charset上插入这个字符
-fn insert_pat_on_transition<E, P>(
-    from_state: Rc<RefCell<DFAState<E, P>>>,
-    to_state: Rc<RefCell<DFAState<E, P>>>,
-    c: E,
+fn insert_pat_on_transition<D: Dtrait, TranE, TranP>(
+    from_state: Rc<RefCell<DFAState<D, TranE, TranP>>>,
+    to_state: Rc<RefCell<DFAState<D, TranE, TranP>>>,
+    c: TranE,
 )
 {
     let from_state_ref = from_state.as_ref().borrow();
@@ -696,10 +789,10 @@ fn insert_pat_on_transition<E, P>(
 
 
 /// 计算一个State通过 ε 转换所能到达的状态集合，目的是把这个计算的集合加入到缓存集中。
-pub fn single_state_epsilon_states_set<E, P>(
-    state: Weak<RefCell<State<E, P>>>,
-    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<E, P>>>>,
-) -> Rc<RefCell<StatesSet<E, P>>>
+pub fn single_state_epsilon_states_set<D: Dtrait, TranE, TranP>(
+    state: Weak<RefCell<State<D, TranE, TranP>>>,
+    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<D, TranE, TranP>>>>,
+) -> Rc<RefCell<StatesSet<D, TranE, TranP>>>
 {
     let state_rc = state.upgrade().unwrap();
     let state_ref = (*state_rc).borrow();
@@ -728,10 +821,10 @@ pub fn single_state_epsilon_states_set<E, P>(
 }
 
 /// 得到一个状态集合的闭包
-fn states_set_epsilon_closure<E, P>(
-    states_set: Rc<RefCell<StatesSet<E, P>>>,
-    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<E, P>>>>,
-) -> Rc<RefCell<StatesSet<E, P>>> {
+fn states_set_epsilon_closure<D: Dtrait, TranE, TranP>(
+    states_set: Rc<RefCell<StatesSet<D, TranE, TranP>>>,
+    cache: &mut HashMap<usize, Rc<RefCell<StatesSet<D, TranE, TranP>>>>,
+) -> Rc<RefCell<StatesSet<D, TranE, TranP>>> {
     let states_set_ref = (*states_set).borrow();
     let res = DFAState::new_key_set();
     let res_here = Rc::clone(&res);
@@ -749,7 +842,7 @@ fn states_set_epsilon_closure<E, P>(
 }
 
 /// 从StatesSet到StatesSet， 不直接用DFAState是因为counter有id分配的问题
-fn r#move<E, P>(s0: Rc<RefCell<StatesSet<E, P>>>, c: &P) -> Rc<RefCell<StatesSet<E, P>>> {
+fn r#move<D: Dtrait, TranE, TranP>(s0: Rc<RefCell<StatesSet<D, TranE, TranP>>>, c: &TranP) -> Rc<RefCell<StatesSet<D, TranE, TranP>>> {
     let s0_states_set_ref = (*s0).borrow();
 
     let mut s1 = KeyHashSet::new(DFAState::states_set_getkey);
@@ -766,13 +859,13 @@ fn r#move<E, P>(s0: Rc<RefCell<StatesSet<E, P>>>, c: &P) -> Rc<RefCell<StatesSet
 }
 
 /// find if states_set exists
-fn find_dfa_state_by_states_set<E, P>(
-    states_set_vec: &Vec<Rc<RefCell<DFAState<E, P>>>>,
-    target: Rc<RefCell<StatesSet<E, P>>>,
-) -> Option<Rc<RefCell<DFAState<E, P>>>> {
+fn find_dfa_state_by_states_set<D: Dtrait, TranE, TranP>(
+    states_set_vec: &Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>,
+    target: Rc<RefCell<StatesSet<D, TranE, TranP>>>,
+) -> Option<Rc<RefCell<DFAState<D, TranE, TranP>>>> {
     match states_set_vec.iter().find(|&states_set| {
         let dfa_state = (**states_set).borrow();
-        let matched = *(*dfa_state.states).borrow() == *(*target).borrow();
+        let matched = *(dfa_state.data.states().unwrap().as_ref().borrow()) == *(*target).borrow();
 
         matched
     }) {
@@ -782,7 +875,7 @@ fn find_dfa_state_by_states_set<E, P>(
 }
 
 ///// Debug tool in NFA2DFA
-// fn display_states_set<E, P>(states_set: &Rc<RefCell<StatesSet<E, P>>>) {
+// fn display_states_set<D, TranE, TranP>(states_set: &Rc<RefCell<StatesSet<D, TranE, TranP>>>) {
 //     let states_set = states_set.as_ref().borrow();
 //     let states_set_ref = (*states_set).borrow();
 
@@ -792,3 +885,144 @@ fn find_dfa_state_by_states_set<E, P>(
 //         println!("{}", *state_ref);
 //     }
 // }
+
+
+/// Match Result
+pub enum MatchResult<S> {
+    Unfinished(Rc<RefCell<S>>),
+    PartialMatched(usize),
+    FullMatched  // include empty match
+}
+
+
+pub fn match_with_nfa<D, TranE, TranP>(nfa_g: &StateGraph<D, TranE, TranP>, input: &[TranP]) -> MatchResult<State<D, TranE, TranP>> {
+    let state = nfa_g.top().unwrap();
+
+    if input.is_empty() {
+        if state.as_ref().borrow().can_reach_acceptable_state() {
+            return MatchResult::FullMatched;
+        }
+
+        return MatchResult::Unfinished(state.clone());
+    }
+
+    let (final_state_rc, final_ind)
+    = _match_with_nfa(state.clone(), input.clone(), 0);
+
+    // println!("final state: {}", final_state_rc.as_ref().borrow());
+    // println!("final index: {}", final_ind);
+
+    if final_state_rc.as_ref().borrow().can_reach_acceptable_state() {
+        if final_ind == input.len() {
+            return MatchResult::FullMatched;
+        }
+
+        return MatchResult::PartialMatched(final_ind);
+    }
+
+    return MatchResult::Unfinished(state.clone());
+}
+
+
+fn _match_with_nfa<D, TranE, TranP>(state_rc: Rc<RefCell<State<D, TranE, TranP>>>, chars_input: &[TranP], init_index: usize)
+-> (Rc<RefCell<State<D, TranE, TranP>>>, usize)
+{
+    let cloned_state_rc = state_rc.clone();
+    let state = cloned_state_rc.as_ref().borrow();
+    // #[cfg(debug_assertions)]
+    // println!(
+    //     "{}>>> trying state : {}, index ={}",
+    //     "    ".repeat(init_index), state.id, init_index
+    // );
+
+    // 注意Transition条件存在重叠的情况
+    for transition in state.transitions.iter() {
+        let next_state_rc = transition.to_state.upgrade().unwrap();
+        let final_state;
+        let final_ind;
+
+        if transition.is_epsilon() {
+            // 自动跳过epsilon转移，到达下一个状态
+            // epsilon 自动转换状态
+            (final_state, final_ind) = _match_with_nfa(next_state_rc, chars_input, init_index);
+        } else if transition.is_match(&chars_input[init_index]) {
+            if init_index + 1 == chars_input.len() {
+                final_state = next_state_rc;
+                final_ind = init_index + 1;  // !! final_ind should point to the lastpost + 1
+            } else {
+                (final_state, final_ind)
+                = _match_with_nfa(next_state_rc, chars_input, init_index + 1);
+            }
+        } else {
+            continue;
+        }
+
+        // Full Match
+        if final_state.clone().as_ref().borrow().can_reach_acceptable_state()
+        && final_ind == chars_input.len() {
+            return (final_state, final_ind)
+        }
+    }
+
+    (state_rc, init_index)
+}
+
+
+pub fn match_with_dfa<D: Dtrait, TranE, TranP>(dfa_g: &DFAStateGraph<D, TranE, TranP>, input: &[TranP]) -> MatchResult<DFAState<D, TranE, TranP>> {
+    let state = dfa_g.top().unwrap();
+
+    if input.is_empty() {
+        if state.as_ref().borrow().is_acceptable() {
+            return MatchResult::FullMatched;
+        }
+
+        return MatchResult::Unfinished(state.clone());
+    }
+
+    let (final_state_rc, final_ind)
+    = _match_with_dfa(state.clone(), input.clone(), 0);
+
+    println!("final state: {}", final_state_rc.as_ref().borrow());
+    println!("final index: {}", final_ind);
+    if final_state_rc.as_ref().borrow().is_acceptable() {
+        if final_ind == input.len() {
+            return MatchResult::FullMatched;
+        }
+
+        return MatchResult::PartialMatched(final_ind);
+    }
+
+    return MatchResult::Unfinished(state.clone());
+}
+
+
+fn _match_with_dfa<D: Dtrait, TranE, TranP>(
+    state_rc: Rc<RefCell<DFAState<D, TranE, TranP>>>,
+    chars_input: &[TranP],
+    init_index: usize,
+) -> (Rc<RefCell<DFAState<D, TranE, TranP>>>, usize)
+{
+    let state_rc_cloned = state_rc.clone();
+    let state = state_rc_cloned.as_ref().borrow();
+
+    #[cfg(debug_assertions)]
+    println!("trying DFA state : {}, index ={}", state.id, init_index);
+
+    for trans in state.transitions.iter() {
+        if trans.is_match(&chars_input[init_index]) {
+            let next_state_rc = trans.to_state.upgrade().unwrap();
+            // 递归结束条件
+            if init_index + 1 == chars_input.len() {
+                return (next_state_rc, init_index + 1);
+            }
+
+            return _match_with_dfa(
+                next_state_rc,
+                chars_input,
+                init_index + 1,
+            );
+        }
+    }
+
+    (state_rc, init_index)
+}

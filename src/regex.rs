@@ -47,7 +47,7 @@ impl CharSet {
         }
     }
 
-    pub fn new_getter() -> Rc<RefCell<dyn TransData<char, char>>> {
+    pub fn new_getter() -> Rc<RefCell<dyn TransData<char, char, char>>> {
         Rc::new(RefCell::new(Self::new()))
     }
 
@@ -297,7 +297,7 @@ impl AlphabetSet<char> for CharSet {
     }
 }
 
-impl TransData<char, char> for CharSet {
+impl TransData<char, char, char> for CharSet {
     fn is_match(&self, pat: &char) -> bool {
         self.contains(pat)
     }
@@ -475,11 +475,11 @@ macro_rules! simple_regex {
 ////////////////////////////////////////////////////////////////////////////////
 //// Converter
 
-pub fn regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char> {
+pub fn regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char, char> {
     _regex2nfa(counter, node)
 }
 
-fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char> {
+fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char, char> {
     let mut states_vec = vec![];
     let (mut begin_state, mut end_state);
 
@@ -514,7 +514,7 @@ fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, c
 
         RegexNodeType::And => {
             // 各个转移状态前后相连
-            let sub_graphs: Vec<StateGraph<char, char>> = node
+            let sub_graphs: Vec<StateGraph<char, char, char>> = node
                 .childen
                 .iter()
                 .map(|child| _regex2nfa(counter, child))
@@ -614,16 +614,9 @@ fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, c
 ////////////////////////////////////////////////////////////////////////////////
 /// Runner
 
-/// Match Result
-pub enum MatchResult<S> {
-    Unfinished(Rc<RefCell<S>>),
-    PartialMatched(usize),
-    FullMatched  // include empty match
-}
-
 
 // Do NFA match
-pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char, char>, input: &str) -> bool {
+pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char, char, char>, input: &str) -> bool {
     // #[cfg(debug_assertions)]
     // println!("NFA matching: {} ", input);
 
@@ -642,80 +635,9 @@ pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char, char>, input: &str) -> b
 }
 
 
-pub fn match_with_nfa<E, P>(nfa_g: &StateGraph<E, P>, input: &[P]) -> MatchResult<State<E, P>> {
-    let state = nfa_g.top().unwrap();
-
-    if input.is_empty() {
-        if state.as_ref().borrow().can_reach_acceptable_state() {
-            return MatchResult::FullMatched;
-        }
-
-        return MatchResult::Unfinished(state.clone());
-    }
-
-    let (final_state_rc, final_ind)
-    = _match_with_nfa(state.clone(), input.clone(), 0);
-
-    // println!("final state: {}", final_state_rc.as_ref().borrow());
-    // println!("final index: {}", final_ind);
-
-    if final_state_rc.as_ref().borrow().can_reach_acceptable_state() {
-        if final_ind == input.len() {
-            return MatchResult::FullMatched;
-        }
-
-        return MatchResult::PartialMatched(final_ind);
-    }
-
-    return MatchResult::Unfinished(state.clone());
-}
-
-
-fn _match_with_nfa<E, P>(state_rc: Rc<RefCell<State<E, P>>>, chars_input: &[P], init_index: usize)
--> (Rc<RefCell<State<E, P>>>, usize)
-{
-    let cloned_state_rc = state_rc.clone();
-    let state = cloned_state_rc.as_ref().borrow();
-    // #[cfg(debug_assertions)]
-    // println!(
-    //     "{}>>> trying state : {}, index ={}",
-    //     "    ".repeat(init_index), state.id, init_index
-    // );
-
-    // 注意Transition条件存在重叠的情况
-    for transition in state.transitions.iter() {
-        let next_state_rc = transition.to_state.upgrade().unwrap();
-        let final_state;
-        let final_ind;
-
-        if transition.is_epsilon() {
-            // 自动跳过epsilon转移，到达下一个状态
-            // epsilon 自动转换状态
-            (final_state, final_ind) = _match_with_nfa(next_state_rc, chars_input, init_index);
-        } else if transition.is_match(&chars_input[init_index]) {
-            if init_index + 1 == chars_input.len() {
-                final_state = next_state_rc;
-                final_ind = init_index + 1;  // !! final_ind should point to the lastpost + 1
-            } else {
-                (final_state, final_ind)
-                = _match_with_nfa(next_state_rc, chars_input, init_index + 1);
-            }
-        } else {
-            continue;
-        }
-
-        // Full Match
-        if final_state.clone().as_ref().borrow().can_reach_acceptable_state()
-        && final_ind == chars_input.len() {
-            return (final_state, final_ind)
-        }
-    }
-
-    (state_rc, init_index)
-}
 
 /// Do DFA match
-pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char, char>, input: &str) -> bool {
+pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char, char, char>, input: &str) -> bool {
     #[cfg(debug_assertions)]
     println!("DFA matching: {} ", input);
 
@@ -733,65 +655,6 @@ pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char, char>, input: &str) -
     println!("matched? : {}\n", matched);
 
     matched
-}
-
-
-pub fn match_with_dfa<E, P>(dfa_g: &DFAStateGraph<E, P>, input: &[P]) -> MatchResult<DFAState<E, P>> {
-    let state = dfa_g.top().unwrap();
-
-    if input.is_empty() {
-        if state.as_ref().borrow().is_acceptable() {
-            return MatchResult::FullMatched;
-        }
-
-        return MatchResult::Unfinished(state.clone());
-    }
-
-    let (final_state_rc, final_ind)
-    = _match_with_dfa(state.clone(), input.clone(), 0);
-
-    println!("final state: {}", final_state_rc.as_ref().borrow());
-    println!("final index: {}", final_ind);
-    if final_state_rc.as_ref().borrow().is_acceptable() {
-        if final_ind == input.len() {
-            return MatchResult::FullMatched;
-        }
-
-        return MatchResult::PartialMatched(final_ind);
-    }
-
-    return MatchResult::Unfinished(state.clone());
-}
-
-fn _match_with_dfa<E, P>(
-    state_rc: Rc<RefCell<DFAState<E, P>>>,
-    chars_input: &[P],
-    init_index: usize,
-) -> (Rc<RefCell<DFAState<E, P>>>, usize)
-{
-    let state_rc_cloned = state_rc.clone();
-    let state = state_rc_cloned.as_ref().borrow();
-
-    #[cfg(debug_assertions)]
-    println!("trying DFA state : {}, index ={}", state.id, init_index);
-
-    for trans in state.transitions.iter() {
-        if trans.is_match(&chars_input[init_index]) {
-            let next_state_rc = trans.to_state.upgrade().unwrap();
-            // 递归结束条件
-            if init_index + 1 == chars_input.len() {
-                return (next_state_rc, init_index + 1);
-            }
-
-            return _match_with_dfa(
-                next_state_rc,
-                chars_input,
-                init_index + 1,
-            );
-        }
-    }
-
-    (state_rc, init_index)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -824,11 +687,11 @@ pub fn ascii_charset() -> CharSet {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Primitive Regex Matcher using NFA State<char, char>
+/// Primitive Regex Matcher using NFA State<char, char, char>
 #[derive(Clone, Debug)]
 pub struct NFAMatcher {
     name: String,
-    state_g: StateGraph<char, char>,
+    state_g: StateGraph<char, char, char>,
 }
 
 impl NFAMatcher {
@@ -853,11 +716,11 @@ impl TokenMatcher for NFAMatcher {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Primitive Regex Matcher using DFA State<char, char>
+/// Primitive Regex Matcher using DFA State<char, char, char>
 #[derive(Clone, Debug)]
 pub struct DFAMatcher {
     name: String,
-    state_g: DFAStateGraph<char, char>,
+    state_g: DFAStateGraph<char, char, char>,
 }
 
 impl DFAMatcher {

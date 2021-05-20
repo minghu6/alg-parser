@@ -7,6 +7,7 @@
 #![feature(proc_macro_hygiene)]
 #![feature(extend_one)]
 #![feature(associated_type_bounds)]
+#![feature(trait_alias)]
 
 #![allow(mixed_script_confusables)]
 
