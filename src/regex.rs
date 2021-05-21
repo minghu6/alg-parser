@@ -843,6 +843,7 @@ make_regex_and_matcher!(comma_r, comma_m, ",", "comma");
 make_regex_and_matcher!(extends_r, extends_m);
 make_regex_and_matcher!(class_r, class_m);
 make_regex_and_matcher!(assign_r, assign_m, "=", "assign");
+make_regex_and_matcher!(n_r, n_m);
 
 /// Identity Regex
 /// [_a-zA-Z][_a-zA-Z0-9]+

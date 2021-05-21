@@ -509,6 +509,12 @@ impl <D: Dtrait, TranE, TranP> DFAData<D, TranE, TranP> {
     }
 }
 
+/// Try Next Result
+pub enum TryNxtRes<S> {
+    Ok(Rc<RefCell<S>>),
+    Multi(Vec<Rc<RefCell<S>>>),
+    None
+}
 
 
 pub struct DFAState<D: Dtrait, TranE, TranP> {
@@ -567,6 +573,23 @@ impl <D: Dtrait, TranE, TranP> DFAState<D, TranE, TranP> {
             .iter()
             .any(|trans|
                  trans.to_state.upgrade().unwrap() == to_state.upgrade().unwrap())
+    }
+
+    pub fn try_next(&self, input: &TranP) -> TryNxtRes<Self> {
+        let mut states_coll: Vec<Rc<RefCell<Self>>>
+        = self.transitions.iter()
+            .filter(|trans| trans.is_match(input))
+            .map(|trans| trans.to_state.upgrade().unwrap())
+            .collect_vec();
+
+        let stateslen = states_coll.len();
+        if stateslen == 0 {
+            TryNxtRes::None
+        } else if stateslen == 1 {
+            TryNxtRes::Ok(states_coll.pop().unwrap())
+        } else {
+            TryNxtRes::Multi(states_coll)
+        }
     }
 
 }

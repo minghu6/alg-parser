@@ -39,7 +39,12 @@ impl Token {
     pub fn to_pred_set_sym(&self) -> PredSetSym {
         PredSetSym::Sym(self.name.clone())
     }
+
+    pub fn to_foll_set_sym(&self) -> FollSetSym {
+        FollSetSym::Sym(self.name.clone())
+    }
 }
+
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -162,6 +167,7 @@ impl PreProcessor for CommentPreProcessor {
         let mut tokens = vec![];
         let mut new_src = vec![];
         let mut part_new_src = &source[..];
+        let mut some_replace_happends = false;
         for (token_type, matcher) in self.tokens_map.iter() {
             loop {
                 if let Some((l, r)) = comment_partial_match(matcher, part_new_src) {
@@ -176,6 +182,7 @@ impl PreProcessor for CommentPreProcessor {
                     (l..r).for_each(|_| new_src.push(' '));
 
                     part_new_src = &part_new_src[r..];
+                    some_replace_happends = true;
                 } else {
                     break;
                 }
@@ -184,7 +191,11 @@ impl PreProcessor for CommentPreProcessor {
         }
 
         channel.tokens = tokens;
-        (new_src, channel)
+        if some_replace_happends {
+            (new_src, channel)
+        } else {
+            (source, channel)
+        }
 
     }
 }

@@ -265,13 +265,13 @@ impl <T> Iterator for QueueIter<'a, T> {
 macro_rules! stack {
     ( $($value:expr),* ) => {
         {
-            let mut stack = $crate::utils::Stack::new();
+            let mut _stack = $crate::utils::Stack::new();
 
             $(
-                stack.push($value);
+                _stack.push($value);
             )*
 
-            stack
+            _stack
         }
     };
 }

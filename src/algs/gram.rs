@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt, rc::Rc, vec, iter};
 
-use indexmap::{indexmap, indexset, IndexMap, IndexSet};
+use indexmap::{indexmap, indexset, IndexSet};
 use itertools::Itertools;
 
 use crate::stack;
@@ -9,7 +9,6 @@ use super::
 {
     super:: {
         utils::{
-            Stack,
             gen_counter
         }
     },
@@ -71,19 +70,6 @@ impl fmt::Display for GramSym {
     }
 }
 
-impl fmt::Display for Stack<GramSym> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, item) in self.stack_iter().enumerate() {
-            if i < self.len() - 1 {
-                write!(f, "{} ", item)?
-            } else {
-                write!(f, "{}", item)?
-            }
-        }
-
-        Ok(())
-    }
-}
 
 /// GramSymStr: 语法符号串
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
@@ -140,10 +126,10 @@ impl fmt::Display for GramSymStr {
 }
 
 /// GramProd: 语法产生式的类型
-type GramProd = (GramSym, GramSymStr);
+pub type GramProd = (GramSym, GramSymStr);
 
 /// FstSets: FirstSets 类型
-type FirstSets = HashMap<GramSym, HashSet<FstSetSym>>;
+pub type FirstSets = HashMap<GramSym, HashSet<FstSetSym>>;
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum FstSetSym {
     Sym(String),
@@ -168,7 +154,7 @@ impl FstSetSym {
 }
 
 /// FollSets: Follow Sets 符号类型
-type FollowSets = HashMap<GramSym, HashSet<FollSetSym>>;
+pub type FollowSets = HashMap<GramSym, HashSet<FollSetSym>>;
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum FollSetSym {
     Sym(String),
@@ -669,6 +655,10 @@ impl LR0Item {
         }
     }
 
+    pub fn symstr(&self) -> &GramSymStr {
+        &self.prod.1
+    }
+
     /// the right hand side symbol immediately follows dot
     /// None indicated that dot points to the end
     pub fn rhs_sym(&self) -> Option<&GramSym> {
@@ -699,6 +689,17 @@ impl LR0Item {
 
     pub fn lhs_sym(&self) -> &GramSym {
         &self.prod.0
+    }
+
+    pub fn prod_len(&self) -> usize {
+        match &self.prod.1 {
+            GramSymStr::Str(symstr) => symstr.len(),
+            _ => 0
+        }
+    }
+
+    pub fn is_end(&self) -> bool {
+        self.pos >= self.prod_len()
     }
 
     pub fn dump(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -768,6 +769,17 @@ impl LR0Closure {
 
     pub fn insert_item(&mut self, item: LR0Item) -> bool {
         self._closure.as_ref().borrow_mut().insert(item)
+    }
+
+    pub fn items(&self) -> Vec<LR0Item> {
+        self._closure.as_ref().borrow().iter().cloned().collect_vec()
+    }
+
+    pub fn end_items(&self) -> Vec<LR0Item> {
+        self._closure.as_ref().borrow().iter()
+        .filter(|item| item.is_end())
+        .cloned()
+        .collect_vec()
     }
 
     pub fn next_sym_closures(&self) -> Vec<(GramSym, Vec<LR0Item>)> {
@@ -889,11 +901,14 @@ impl Gram {
         None
     }
 
+    ///
+    ///     要支持 LR(0) parsing, 需要保证每一个没有transition(也就是end状态)的state
+    ///
+    ///     有且只有一个LR(0)-Item
     pub fn lr0_dfa(&self) -> DFAStateGraph<LR0Closure, GramSym, GramSym> {
         if self.productions.is_empty() {
             return DFAStateGraph::empty()
         }
-
 
         let start_closure = self.start_item_closure().unwrap();
         let mut counter = gen_counter();
@@ -1145,8 +1160,16 @@ mod test {
 
     #[test]
     fn test_lr0() {
+        use crate::parser::{
+            Parser,
+            SLR1Parser
+        };
+
         declare_nonterminal! {E, E1, T, F};
-        declare_terminal! {mul, add, n, lparen, rparen};
+        declare_terminal! {
+            -: lexer :-
+            mul, add, n, lparen, rparen
+        };
 
         let gram = grammar![G|
             E1:
@@ -1171,6 +1194,25 @@ mod test {
 
         let lr0dfa = gram.lr0_dfa();
         println!("{}", lr0dfa);
+
+        // Test LR(0) FSM
+        // let channels = lexer.tokenize("n*n");
+        // let main_channel = channels.get("default").unwrap();
+        // let main_tokens = &main_channel.tokens;
+
+        // println!("tokens: {:#?}", main_tokens);
+
+        let follow_sets = gram.follow_sets(&gram.first_sets());
+        println!("follow_sets: {:#?}", follow_sets);
+
+        let slrparser = SLR1Parser::new("example", gram, lexer);
+
+        match slrparser.parse("n*n") {
+            Err(err) => panic!("{}", err),
+            Ok(ast) => {
+                println!("{}", ast.as_ref().borrow());
+            }
+        }
     }
 
 }
