@@ -517,6 +517,61 @@ pub fn demo_full() -> LL1Parser {
 }
 
 
+pub fn demo_bottom_up_parser_slr1() -> SLR1Parser {
+    declare_nonterminal! {E, E1, T, F};
+    declare_terminal! {
+        -: lexer :-
+        mul, add, n, lparen, rparen
+    };
+
+    let gram = grammar![G|
+        E1:
+        | E;
+
+        E:
+        | T;
+        | E add T;
+
+        T:
+        | F;
+        | T mul F;
+
+        F:
+        | n;
+        | lparen E rparen;
+    |];
+
+    SLR1Parser::new("example", gram.clone(), lexer)
+}
+
+
+pub fn demo_bottom_up_parser_slr1vT() -> SLR1vTParser {
+    declare_nonterminal! {E, E1, T, F};
+    declare_terminal! {
+        -: lexer :-
+        mul, add, n, lparen, rparen
+    };
+
+    let gram = grammar![G|
+        E1:
+        | E;
+
+        E:
+        | T;
+        | E add T;
+
+        T:
+        | F;
+        | T mul F;
+
+        F:
+        | n;
+        | lparen E rparen;
+    |];
+
+    SLR1vTParser::new("example", gram.clone(), lexer)
+}
+
 #[cfg(test)]
 mod test {
     use num::{BigInt, BigRational, FromPrimitive};
@@ -599,6 +654,33 @@ mod test {
             parse_algb_ratio(" 7 * 3 -2").unwrap(),
             BigRational::from_integer(BigInt::from_i32(19).unwrap())
         );
+    }
+
+
+    #[test]
+    fn slr_parser_works() {
+        use super:: {
+            demo_bottom_up_parser_slr1,
+            demo_bottom_up_parser_slr1vT
+        };
+
+        let parser = demo_bottom_up_parser_slr1();
+
+        match parser.parse("n+n*n") {
+            Err(err) => panic!("{}", err),
+            Ok(ast) => {
+                println!("{}", ast.as_ref().borrow());
+            }
+        }
+
+        let parser_vt = demo_bottom_up_parser_slr1vT();
+
+        match parser_vt.parse("n+n*n") {
+            Err(err) => panic!("{}", err),
+            Ok(ast) => {
+                println!("{}", ast.as_ref().borrow());
+            }
+        }
     }
 
     #[test]

@@ -9,10 +9,11 @@ use std::{borrow::Borrow, cell::RefCell, collections::{
 
 };
 
+use indexmap::{ IndexMap, indexmap };
 use itertools::Itertools;
 use key_set::{KeyHashSet, KeySet};
 
-use crate::utils::{CounterType, gen_counter};
+use crate::{utils::{CounterType, gen_counter}};
 
 
 /*
@@ -314,11 +315,12 @@ impl <D, TranE, TranP> fmt::Display for Transition<D, TranE, TranP> {
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// DFA State Graph: 建立在普通的State(NFA State)的集合的基础之上
+
 #[derive(Clone, Debug)]
 pub struct DFAStateGraph<D: Dtrait, TranE, TranP> {
     name: String,  // just for identity, temporarily.
     _nfa_states: Vec<Rc<RefCell<State<D, TranE, TranP>>>>,
-    states: Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>
+    states: IndexMap<usize, Rc<RefCell<DFAState<D, TranE, TranP>>>>
 }
 
 impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
@@ -326,22 +328,37 @@ impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
         Self {
             name: "".to_owned(),
             _nfa_states: vec![],
-            states: vec![]
+            states: indexmap![]
         }
     }
 
     pub fn top(&self) -> Option<&Rc<RefCell<DFAState<D, TranE, TranP>>>> {
-        self.states.first()
+        self.states.values().next()
     }
 
     pub fn tail(&self) -> Option<&Rc<RefCell<DFAState<D, TranE, TranP>>>> {
-        self.states.last()
+        let lastpos = self.states.len() - 1;
+
+        if let Some(res) = self.states.get_index(lastpos) {
+            Some(res.1)
+        } else {
+            None
+        }
+    }
+
+    /// States Order by state id
+    pub fn ordered_states(&self) -> Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>> {
+        self.states.values().cloned().collect_vec()
+    }
+
+    pub fn get_state(&self, state_id: &usize) -> Option<&Rc<RefCell<DFAState<D, TranE, TranP>>>> {
+        self.states.get(state_id)
     }
 }
 
-impl <D: Dtrait, TranE, TranP> From<Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>>
+impl <D: Dtrait, TranE, TranP> From<IndexMap<usize, Rc<RefCell<DFAState<D, TranE, TranP>>>>>
 for DFAStateGraph<D, TranE, TranP> {
-    fn from(value: Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>) -> Self {
+    fn from(value: IndexMap<usize, Rc<RefCell<DFAState<D, TranE, TranP>>>>) -> Self {
         Self {
             name: "".to_owned(),
             _nfa_states: vec![],
@@ -377,8 +394,9 @@ impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
         // 保存每次计算出的新的states_set
         let mut new_dfa_state_vec = Vec::<Rc<RefCell<DFAState<D, TranE, TranP>>>>::new();
         // 保存所有已计算的dfa state
-        let mut dfa_states_vec = Vec::<Rc<RefCell<DFAState<D, TranE, TranP>>>>::new();
-        dfa_states_vec.push(Rc::clone(&cur_dfa_state));
+        let mut dfa_state_coll = indexmap! {
+            cur_dfa_state.as_ref().borrow().id.clone() => Rc::clone(&cur_dfa_state)
+        };
         new_dfa_state_vec.push(Rc::clone(&cur_dfa_state));
 
         while new_dfa_state_vec.len() > 0 {
@@ -409,7 +427,7 @@ impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
 
                     let next_dfa_state;
                     match find_dfa_state_by_states_set(
-                        &dfa_states_vec,
+                        &dfa_state_coll,
                         Rc::clone(&next_states_set_closure),
                     ) {
                         Some(old_dfa_state) => {
@@ -434,7 +452,10 @@ impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
                                 Rc::clone(&next_states_set_closure),
                             )));
 
-                            dfa_states_vec.push(Rc::clone(&new_dfa_state));
+                            dfa_state_coll.insert(
+                                new_dfa_state.as_ref().borrow().id.clone(),
+                                Rc::clone(&new_dfa_state)
+                            );
                             new_dfa_state_vec.push(Rc::clone(&new_dfa_state));
 
                             (*taken_state)
@@ -456,7 +477,7 @@ impl <D: Dtrait, TranE, TranP> DFAStateGraph<D, TranE, TranP> {
         Self {
             name: nfa_g.name,
             _nfa_states: nfa_g.states,
-            states: dfa_states_vec
+            states: dfa_state_coll
         }
     }
 }
@@ -467,10 +488,7 @@ impl <D: Dtrait, TranE, TranP> fmt::Display for DFAStateGraph<D, TranE, TranP> {
         writeln!(f, "{}", "-".repeat(80))?;
 
         for state
-        in self.states.iter().sorted_by_key(
-            |state|
-            state.as_ref().borrow().id
-        ) {
+        in self.ordered_states() {
             write!(f, "{}", state.as_ref().borrow())?;
             writeln!(f, "{}", "-".repeat(80))?;
         }
@@ -883,10 +901,10 @@ fn r#move<D: Dtrait, TranE, TranP>(s0: Rc<RefCell<StatesSet<D, TranE, TranP>>>, 
 
 /// find if states_set exists
 fn find_dfa_state_by_states_set<D: Dtrait, TranE, TranP>(
-    states_set_vec: &Vec<Rc<RefCell<DFAState<D, TranE, TranP>>>>,
+    states_set_coll: &IndexMap<usize, Rc<RefCell<DFAState<D, TranE, TranP>>>>,
     target: Rc<RefCell<StatesSet<D, TranE, TranP>>>,
 ) -> Option<Rc<RefCell<DFAState<D, TranE, TranP>>>> {
-    match states_set_vec.iter().find(|&states_set| {
+    match states_set_coll.values().find(|&states_set| {
         let dfa_state = (**states_set).borrow();
         let matched = *(dfa_state.data.states().unwrap().as_ref().borrow()) == *(*target).borrow();
 

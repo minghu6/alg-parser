@@ -485,7 +485,7 @@ fn _copy_ll1_states_stack(states_stack: &LL1ParseStatesStack) -> LL1ParseStatesS
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/////// SLR(1) Parser (parser for LR(0) FSM)
+/////// SLR(1) Parser (parser for LR(0) FSM) ref http://www.cs.ecu.edu/karl/5220/spr16/Notes/Bottom-up/lr0machine.html
 
 pub struct SLR1Parser {
     name: String,
@@ -554,9 +554,10 @@ impl Parser for SLR1Parser {
 
                         if input.is_nonterminal() {
                             state_input = match lookahead {
-                                FollSetSym::EndMarker => None,
+                                FollSetSym::EndMarker => None,  // just to do reduce
                                 FollSetSym::Sym(ref sym) => Some(GramSym::Terminal(sym.to_owned()))
                             };
+
                             continue;
                         } else {
                             // Shift
@@ -577,22 +578,61 @@ impl Parser for SLR1Parser {
                 LROp::Shift => {
                     debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Shift");
 
-                    state_input = slr1_shift(
+                    // Just Do Shift
+                    slr1_shift(
                         &mut token_queue,
-                        &mut lookahead,
                         &mut reduce_stack,
                     );
+
+                    state_input =
+                    match token_queue.front() {
+                        Some(token) => {
+                            lookahead = token.to_foll_set_sym();
+
+                            Some(token.to_gram_sym())
+                        },
+                        None => {
+                            lookahead = FollSetSym::EndMarker;
+
+                            None
+                        },
+                    }
                 },
                 LROp::Reduce => {
                     debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Reduce");
 
-                    state_input = slr1_reduce(
-                        state_input,
-                        &self.follow_sets,
-                        &lookahead,
-                        &mut reduce_stack,
-                        &mut state_stack,
-                    );
+                    let cur_state = state_stack.pop().unwrap();
+                    let cur_state_ref = cur_state.as_ref().borrow();
+
+                    let option_end_item
+                    = cur_state_ref
+                        .data
+                        .data()
+                        .unwrap()
+                        .end_items()
+                        .into_iter()
+                        .filter(|item| {
+                            let lhs = item.lhs_sym();
+                            self.follow_sets.get(lhs).unwrap().contains(&lookahead)
+                        })
+                        .collect_vec()
+                        .pop();
+
+                    state_input =
+                    if let Some(end_item) = option_end_item {
+                        // Just Do Reduce
+                        slr1_reduce(
+                            &end_item.to_gram_prod(),
+                            &mut reduce_stack,
+                        );
+
+                        Some(end_item.lhs_sym().to_owned())
+                    } else {
+                        // 暂时设置找不到就继续退栈(栈空的时候自动退出执行循环，然后检测报错)
+                        // 也可以直接报错
+                        state_stack.pop();
+                        state_input
+                    };
                 }
             }
         } // end loop
@@ -615,82 +655,6 @@ impl Parser for SLR1Parser {
         }
 
         Ok(root_node.get_ast().unwrap().clone())
-    }
-}
-
-fn slr1_shift(
-    token_queue: &mut VecDeque<Token>,
-    lookahead: &mut FollSetSym,
-    reduce_stack: &mut Stack<ASTNode>,
-) -> Option<GramSym> {
-    let token = token_queue.pop_front().unwrap();
-
-    // Consume token and turn it into ast node
-    let node = ASTNode::Leaf(Rc::new(token));
-    reduce_stack.push(node);
-
-    match token_queue.front() {
-        Some(token) => {
-            *lookahead = token.to_foll_set_sym();
-
-            Some(token.to_gram_sym())
-        },
-        None => {
-            *lookahead = FollSetSym::EndMarker;
-
-            None
-        },
-    }
-}
-
-fn slr1_reduce(
-    old_state_input: Option<GramSym>,
-    follow_sets: &FollowSets,
-    lookahead: &FollSetSym,
-    reduce_stack: &mut Stack<ASTNode>,
-    states_stack: &mut Stack<LR0DFAState>, // shouldn't be empty
-) -> Option<GramSym> {
-    let cur_state = states_stack.pop().unwrap();
-    let cur_state_ref = cur_state.as_ref().borrow();
-    let end_item = cur_state_ref
-        .data
-        .data()
-        .unwrap()
-        .end_items()
-        .into_iter()
-        .filter(|item| {
-            let lhs = item.lhs_sym();
-            follow_sets.get(lhs).unwrap().contains(lookahead)
-        })
-        .collect_vec()
-        .pop();
-
-    if let Some(end_item) = end_item {
-        // Bottom Up!
-
-        // reduce node to paren node
-        let lhs_sym = end_item.lhs_sym();
-        let mut paren = AST::new(lhs_sym);
-
-        if let GramSymStr::Str(symstr) = end_item.symstr() {
-            symstr.into_iter().map(|_sym| {
-                reduce_stack.pop().unwrap()
-            }).rev().for_each(|node| {
-                paren.insert_node(node);
-            });
-        } else {
-            // LR Item的 SymStr 里面不应有epsilon
-            unreachable!();
-        }
-
-        let paren_node = ASTNode::Tree(Rc::new(RefCell::new(paren)));
-
-        reduce_stack.push(paren_node);
-
-        Some(lhs_sym.to_owned())
-    } else {
-        states_stack.pop();
-        old_state_input
     }
 }
 
@@ -732,6 +696,181 @@ fn debug_print_lr0(
     println!("Action: {}", action);
     println!("{}", "-".repeat(80));
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+/////// SLR(1) Parser Table version
+
+pub struct SLR1vTParser {
+    name: String,
+    gram: Gram,
+    lexer: Lexer,
+    // 是的，仍然需要dfa_state, 只是不需要动态查找transition罢了
+    dfa_g: DFAStateGraph<LR0Closure, GramSym, GramSym>,
+    pt: SLR1PT,
+}
+
+impl SLR1vTParser {
+    pub fn new(name: &str, gram: Gram, lexer: Lexer) -> Self {
+        let dfa_g = gram.lr0_dfa();
+        let follow_sets = gram.follow_sets(&gram.first_sets());
+        let pt = gram.slr0_pt(&dfa_g, &follow_sets);
+
+        Self {
+            name: name.to_owned(),
+            gram,
+            lexer,
+            dfa_g,
+            pt,
+        }
+    }
+}
+
+impl Parser for SLR1vTParser {
+    fn parse(&self, source: &str) -> Result<Rc<RefCell<AST>>, String> {
+        let channels = self.lexer.tokenize(source);
+        let tokens = channels.get_index(0).unwrap().1.tokens.clone();
+        let start_sym = self.gram.start_sym().unwrap();
+
+        if tokens.is_empty() {
+            return Ok(Rc::new(RefCell::new(AST::new(&start_sym))));
+        }
+
+        println!("tokens: {:#?}\n", tokens);
+        println!("{}", self.pt);
+        println!("SLR(1) vT {}: ", self.name);
+        println!("{}", "-".repeat(80));
+
+        let mut token_queue = VecDeque::from_iter(tokens.into_iter());
+        let mut reduce_stack = stack![];
+        let mut state_stack = stack![self.dfa_g.top().unwrap().to_owned()];
+        // 预读一个token
+        let mut input = token_queue.front().unwrap().to_foll_set_sym();
+        let mut lookahead = FollSetSym::EndMarker;
+
+        while !state_stack.is_empty() {
+
+            let cur_state = state_stack.top().unwrap().to_owned();
+            let cur_state_ref = cur_state.as_ref().borrow();
+            let pos = (cur_state_ref.id, input.clone());
+
+            match self.pt.get(&pos).unwrap() {
+                // Shift
+                SLR1PTAct::S(to_state_id) => {
+                    state_stack.push(
+                        self.dfa_g.get_state(&to_state_id).unwrap().to_owned()
+                    );
+
+                    debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Shift");
+
+                    slr1_shift(
+                        &mut token_queue,
+                        &mut reduce_stack,
+                    );
+
+                    if let Some(token) = token_queue.front() {
+                        lookahead = token.to_foll_set_sym();
+                    } else {
+                        lookahead = FollSetSym::EndMarker;
+                    }
+
+                    input = lookahead.clone();
+                },
+                // Reduce
+                SLR1PTAct::R(prod_nth) => {
+                    debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Reduce");
+                    state_stack.pop();
+
+                    let prod = self.gram.get_prod_index(*prod_nth).unwrap();
+                    slr1_reduce(
+                        prod,
+                        &mut reduce_stack
+                    );
+
+                    input = prod.0.to_foll_set_sym();
+                },
+                // Nonterminal Goto
+                SLR1PTAct::G(to_state_id) => {
+                    state_stack.push(
+                        self.dfa_g.get_state(&to_state_id).unwrap().to_owned()
+                    );
+
+                    input = lookahead.clone();
+                },
+                SLR1PTAct::None => {
+                    state_stack.pop();
+                },
+                SLR1PTAct::Accept => {
+                    break;
+                }
+            }
+        }  // end loop
+
+        if !token_queue.is_empty() {
+            return Err(format!("Tokens remains: `{:?}`", token_queue));
+        }
+
+        if reduce_stack.len() > 1 {
+            return Err(format!("Unreduced stack remains: `{:?}`", reduce_stack));
+        }
+
+        let root_node = reduce_stack.pop().unwrap();
+        let root_sym = root_node.to_gram_sym();
+        if root_sym != *start_sym {
+            return Err(format!(
+                "Incorrected root sym: `{}`\n(`{}` expected)",
+                root_sym, start_sym
+            ));
+        }
+
+        Ok(root_node.get_ast().unwrap().clone())
+    }
+}
+
+/*
+* SLR(1) common shift/reduce function
+*/
+
+/// Shift 应该只是一个state_input作为terminal类型的情况
+/// 而作为nonterminal的情况在invoker中另做处理
+fn slr1_shift(
+    token_queue: &mut VecDeque<Token>,
+    reduce_stack: &mut Stack<ASTNode>,
+) {
+    let token = token_queue.pop_front().unwrap();
+
+    // Consume token and turn it into ast node
+    let node = ASTNode::Leaf(Rc::new(token));
+    reduce_stack.push(node);
+}
+
+fn slr1_reduce(
+    prod: &GramProd,
+    reduce_stack: &mut Stack<ASTNode>,
+)
+{
+    // Bottom Up!
+
+    // reduce node to paren node
+    let lhs_sym = &prod.0;
+    let mut paren = AST::new(lhs_sym);
+
+    if let GramSymStr::Str(symstr) = &prod.1 {
+        symstr.into_iter().map(|_sym| {
+            reduce_stack.pop().unwrap()
+        }).rev().for_each(|node| {
+            paren.insert_node(node);
+        });
+    } else {
+        // LR Item的 SymStr 里面不应有epsilon
+        unreachable!();
+    }
+
+    let paren_node = ASTNode::Tree(Rc::new(RefCell::new(paren)));
+
+    reduce_stack.push(paren_node);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Unit Test
