@@ -1235,8 +1235,17 @@ impl Gram {
                         let prod = end_item.to_gram_prod();
                         let (prod_ind, _value) = self.productions.get_full(&prod).unwrap();
 
-                        *pt.get_mut(&(this_state_id, sym.clone())).unwrap()
-                        = SLR1PTAct::R(prod_ind)
+                        let ptcell
+                        = pt.get_mut(&(this_state_id, sym.clone())).unwrap();
+
+                        if let SLR1PTAct::None = *ptcell {
+                            *ptcell = SLR1PTAct::R(prod_ind);
+                        } else {
+                            eprintln!("\nConflics({}, {}): {}/{}\n",
+                            this_state_id, sym,
+                            *ptcell, SLR1PTAct::R(prod_ind)
+                            );
+                        }
                     }
                 }
             });
@@ -1525,4 +1534,124 @@ mod test {
         println!("{}", pt);
     }
 
+    #[test]
+    fn lr0_handle_conflics() {
+        use crate::parser::{
+            Parser,
+            SLR1Parser,
+            SLR1vTParser
+        };
+
+        declare_nonterminal! {S, A, B, D};
+        declare_terminal! {
+            -: lexer :-
+            e, a, b
+        };
+
+        use_epsilon!(ε);
+
+        make_regex_and_matcher!(e_r, e_m);
+        make_regex_and_matcher!(a_r, a_m);
+        make_regex_and_matcher!(b_r, b_m);
+
+        let gram = grammar![G|
+            S:
+            | e B b A;
+            | e A;
+
+            A:
+            | a;
+            | ε;
+
+            B:
+            | a;
+            | a D;
+
+            D:
+            | b;
+        |];
+
+        let lr0dfa = gram.lr0_dfa();
+        println!("{}", lr0dfa);
+
+        let follow_sets = gram.follow_sets(&gram.first_sets());
+
+        let pt = gram.slr0_pt(&lr0dfa, &follow_sets);
+
+        println!("{}", pt);
+    }
+
+    #[test]
+    fn check_lr0_ambiguous_grammar() {
+        use crate::parser::{
+            Parser,
+            SLR1Parser,
+            SLR1vTParser
+        };
+
+        declare_nonterminal! {E};
+        declare_terminal! {
+            -: lexer :-
+            n, lparen, rparen, mul, add
+        };
+
+        let gram = grammar![G|
+            E:
+            | n;
+
+            E:
+            | E add E;
+            | E mul E;
+            | lparen E rparen;
+        |];
+
+        let lr0dfa = gram.lr0_dfa();
+        println!("{}", lr0dfa);
+
+        let follow_sets = gram.follow_sets(&gram.first_sets());
+
+        let pt = gram.slr0_pt(&lr0dfa, &follow_sets);
+
+        println!("{}", pt);
+    }
+
+    #[test]
+    fn test_lalr1() {
+        use crate::parser::{
+            Parser,
+            SLR1Parser,
+            SLR1vTParser
+        };
+
+        declare_nonterminal! {S1, S, L, R};
+        declare_terminal! {
+            -: lexer :-
+            assign,  mul, id
+        };
+
+        let gram = grammar![G|
+            S1:
+            | S;
+
+            S:
+            | L assign R;
+            | R;
+
+            L:
+            | mul R;
+            | id;
+
+            R:
+            | L;
+        |];
+
+        let lr0dfa = gram.lr0_dfa();
+        println!("{}", lr0dfa);
+
+        let follow_sets = gram.follow_sets(&gram.first_sets());
+
+        let pt = gram.slr0_pt(&lr0dfa, &follow_sets);
+
+        println!("{}", pt);
+    }
 }
