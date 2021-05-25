@@ -492,7 +492,7 @@ pub struct SLR1Parser {
     gram: Gram,
     lexer: Lexer,
     dfa_g: DFAStateGraph<LR0Closure, GramSym, GramSym>,
-    follow_sets: FollowSets,
+    follow_sets: FollSets,
 }
 
 impl SLR1Parser {
@@ -746,6 +746,7 @@ impl Parser for SLR1vTParser {
         let mut state_stack = stack![self.dfa_g.top().unwrap().to_owned()];
         // 预读一个token
         let mut input = token_queue.front().unwrap().to_foll_set_sym();
+        // 这里整个设计，包括状态图并没有从$开始，而是直接预读了一个token
         let mut lookahead = FollSetSym::EndMarker;
 
         while !state_stack.is_empty() {

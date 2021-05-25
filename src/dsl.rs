@@ -144,7 +144,7 @@ macro_rules! grammar {
 macro_rules! First {
     ($name:ident | $($sym:ident)+) => {
         {
-            let mut _set = hashset!{};
+            let mut _set = indexset!{};
             $(
                 let sym_s = stringify!($sym);
 
@@ -166,7 +166,7 @@ macro_rules! First {
 macro_rules! Follow {
     ($name:ident | $($sym:ident)+) => {
         {
-            let mut _set = hashset!{};
+            let mut _set = indexset!{};
             $(
                 let sym_s = stringify!($sym);
 
