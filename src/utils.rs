@@ -107,6 +107,12 @@ pub trait GraphWalker<'a, K: Hash + Eq> {
     }
 }
 
+
+pub trait ObjId {
+    fn id(&self) -> usize;
+}
+
+
 #[inline]
 pub fn char_inc(x: &char) -> Option<char> {
     use std::char::from_u32;

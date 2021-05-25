@@ -13,7 +13,7 @@ use indexmap::{ IndexMap, indexmap };
 use itertools::Itertools;
 use key_set::{KeyHashSet, KeySet};
 
-use crate::{utils::{CounterType, gen_counter}};
+use crate::{utils::{CounterType, ObjId, gen_counter}};
 
 
 /*
@@ -539,6 +539,12 @@ pub struct DFAState<D: Dtrait, TranE, TranP> {
     pub id: usize,
     pub transitions: Vec<DFATransition<D, TranE, TranP>>,
     pub data: DFAData<D, TranE, TranP>
+}
+
+impl <D: Dtrait, TranE, TranP> ObjId for DFAState<D, TranE, TranP> {
+    fn id(&self) -> usize {
+        self.id
+    }
 }
 
 impl <D: Dtrait, TranE, TranP> DFAState<D, TranE, TranP> {

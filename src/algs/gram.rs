@@ -3,7 +3,7 @@ use std::{cell::RefCell, fmt, iter, rc::{Rc}};
 use indexmap::{indexmap, indexset, IndexSet, IndexMap};
 use itertools::Itertools;
 
-use crate::stack;
+use crate::{stack};
 
 use super::
 {super:: {
@@ -939,7 +939,7 @@ pub struct SLR1PT {
 }
 
 impl SLR1PT {
-    pub fn new(ordered_states: &Vec<Rc<RefCell<LR0DFA>>>, termsyms: Vec<GramSym>, nontermsyms: Vec<GramSym>) -> Self {
+    pub fn new(ordered_states: &Vec<usize>, termsyms: Vec<GramSym>, nontermsyms: Vec<GramSym>) -> Self {
         let mut data = indexmap! {};
 
         data.extend(
@@ -957,7 +957,7 @@ impl SLR1PT {
                 col.extend(
                     ordered_states
                         .iter()
-                        .map(|state| (state.as_ref().borrow().id, SLR1PTAct::None))
+                        .map(|id| (id.clone(), SLR1PTAct::None))
                 );
 
                 (sym, col)
@@ -1212,10 +1212,13 @@ impl Gram {
     }
 
     pub fn slr0_pt(&self, dfa_g: &LR0DFAG, follow_sets: &FollSets) -> SLR1PT {
-        let states = dfa_g.ordered_states();
+        let states= dfa_g.ordered_states();
+        let state_ids = states.iter()
+        .map(|s| s.as_ref().borrow().id.clone())
+        .collect_vec();
 
         let mut pt = SLR1PT::new(
-            &states,
+            &state_ids,
             self.term_syms(),
             self.nonterm_syms()
         );
@@ -1391,7 +1394,7 @@ impl fmt::Display for LR1Item {
 /// _LR1Closure
 type _LR1Closure = IndexSet<LR1Item>;
 
-/// LR0Closure
+/// LR1Closure
 #[derive(Clone)]
 pub struct LR1Closure {
     _closure: Rc<RefCell<_LR1Closure>>
@@ -1586,6 +1589,7 @@ impl Gram {
         None
     }
 
+    /// used for LALR(1) parser (Look Ahead LR(1))
     pub fn lr1_dfa(&self, first_sets: &FstSets) -> LR1DFAG {
         if self.productions.is_empty() {
             return LR1DFAG::empty()
@@ -1645,6 +1649,103 @@ impl Gram {
         }
 
         DFAStateGraph::from(state_coll)
+    }
+
+    pub fn slr1_pt(&self, dfa_g: &LR1DFAG) -> SLR1PT {
+        let states = dfa_g.ordered_states();
+        let state_ids = states.iter()
+        .map(|s| s.as_ref().borrow().id.clone())
+        .collect_vec();
+
+        let mut pt = SLR1PT::new(
+            &state_ids,
+            self.term_syms(),
+            self.nonterm_syms()
+        );
+
+        // Install Accept
+        *pt.get_mut(&(0, FollSetSym::EndMarker)).unwrap() = SLR1PTAct::Accept;
+
+        // Install Shift
+        // For each column labeled by a token t,
+        // the table contains shift n if there is a transition from state q to state n
+        // that is labeled by token t.
+        // token t: terminal sym t
+        self.term_syms()
+        .into_iter()
+        .for_each(|sym| {  // for each t
+            states
+            .iter()
+            .for_each(|state| {  // for each state q
+                if let TryNxtRes::Ok(to_state)
+                = state.as_ref().borrow().try_next(&sym) {
+                    let this_state_id = state.as_ref().borrow().id;
+                    let to_state_id = to_state.as_ref().borrow().id;
+
+                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap()
+                    = SLR1PTAct::S(to_state_id)
+                }
+            })
+        });
+
+        // Install Reduce
+        // For each column labeled by a token t, the table contains action reduce n if
+        //  a) state q contains LR(0) item N → α ⋅,
+        //  b) production N → α is the nth production, and
+        //  c) t is in FOLLOW(N).
+        self.term_syms()
+        .into_iter()
+        .map(|sym| sym.to_foll_set_sym())
+        .chain(vec![FollSetSym::EndMarker].into_iter())
+        .for_each(|sym| {  // for each t
+            states
+            .iter()
+            .for_each(|state| {  // for each state q
+                let mut end_items = state.as_ref().borrow().data.data().unwrap().end_items();
+
+                if let Some(end_item) = end_items.pop() {
+                    if sym == end_item.lookahead {
+                        let this_state_id = state.as_ref().borrow().id;
+
+                        let prod = end_item.to_gram_prod();
+                        let (prod_ind, _value) = self.productions.get_full(&prod).unwrap();
+
+                        let ptcell
+                        = pt.get_mut(&(this_state_id, sym.clone())).unwrap();
+
+                        if let SLR1PTAct::None = *ptcell {
+                            *ptcell = SLR1PTAct::R(prod_ind);
+                        } else {
+
+                            eprintln!("\nConflics({}, {}): {}/{}\n",
+                            this_state_id, sym,
+                            *ptcell, SLR1PTAct::R(prod_ind)
+                            );
+                        }
+                    }
+                }
+            });
+        });
+
+        // Install Nonterminal Goto
+        self.nonterm_syms()
+        .into_iter()
+        .for_each(|sym| {  // for each t
+            states
+            .iter()
+            .for_each(|state| {  // for each state q
+                if let TryNxtRes::Ok(to_state)
+                = state.as_ref().borrow().try_next(&sym) {
+                    let this_state_id = state.as_ref().borrow().id;
+                    let to_state_id = to_state.as_ref().borrow().id;
+
+                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap()
+                    = SLR1PTAct::G(to_state_id)
+                }
+            })
+        });
+
+        pt
     }
 }
 
@@ -1925,7 +2026,7 @@ mod test {
     }
 
     #[test]
-    fn lr0_handle_conflics() {
+    fn lr_handle_conflics() {
         use crate::parser::{
             Parser,
             SLR1Parser,
@@ -1962,13 +2063,21 @@ mod test {
         |];
 
         let lr0dfa = gram.lr0_dfa();
-        println!("{}", lr0dfa);
+        // println!("{}", lr0dfa);
 
-        let follow_sets = gram.follow_sets(&gram.first_sets());
+        let first_sets = gram.first_sets();
+        let follow_sets = gram.follow_sets(&first_sets);
 
-        let pt = gram.slr0_pt(&lr0dfa, &follow_sets);
+        println!("LR(0) Parsing Table:");
+        let lr0pt = gram.slr0_pt(&lr0dfa, &follow_sets);
+        println!("{}", lr0pt);
 
-        println!("{}", pt);
+        let lr1dfa = gram.lr1_dfa(&first_sets);
+
+        println!("LR(1) Parsing Table:");
+        let lr1pt = gram.slr1_pt(&lr1dfa);
+        println!("{}", lr1pt);
+
     }
 
     #[test]
@@ -2078,15 +2187,20 @@ mod test {
         let lr0dfa = gram.lr0_dfa();
         println!("{}", lr0dfa);
 
-        // let follow_sets = gram.follow_sets(&gram.first_sets());
-
-        // let pt = gram.slr0_pt(&lr0dfa, &follow_sets);
-
-        // println!("{}", pt);
+        let first_sets = gram.first_sets();
+        // display_fstsets(&first_sets);
+        println!("{}", lr0dfa);
 
         let first_sets = gram.first_sets();
-        display_fstsets(&first_sets);
-        let lr0dfa = gram.lr1_dfa(&first_sets);
-        println!("{}", lr0dfa);
+        let follow_sets = gram.follow_sets(&first_sets);
+
+        println!("LR(0) Parsing Table:");
+        let lr0pt = gram.slr0_pt(&lr0dfa, &follow_sets);
+        println!("{}", lr0pt);
+
+        let lr1dfa = gram.lr1_dfa(&first_sets);
+        println!("LR(1) Parsing Table:");
+        let lr1pt = gram.slr1_pt(&lr1dfa);
+        println!("{}", lr1pt);
     }
 }
