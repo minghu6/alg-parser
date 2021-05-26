@@ -16,6 +16,8 @@ extern crate cute;
 #[macro_use]
 extern crate maplit;
 
+extern crate m6_key_set as key_set;
+
 extern crate proc_macros; /* to avoid a cargo bug when cross-compiling (e.g. wasm) */
 
 pub use proc_macros::{

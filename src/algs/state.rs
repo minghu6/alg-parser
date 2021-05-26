@@ -857,7 +857,7 @@ pub fn single_state_epsilon_states_set<D: Dtrait, TranE, TranP>(
             let next_state = transition.to_state.clone();
 
             let other = single_state_epsilon_states_set(next_state, cache);
-            clousure_ref.extend((*other).borrow().clone());
+            clousure_ref.extend(other.as_ref().borrow().iter().cloned());
         }
     }
 
@@ -879,11 +879,11 @@ fn states_set_epsilon_closure<D: Dtrait, TranE, TranP>(
 
     for state in states_set_ref.iter() {
         let state_closure = single_state_epsilon_states_set(state.clone(), cache);
-        res_ref.extend((*state_closure).borrow().clone());
+        res_ref.extend(state_closure.as_ref().borrow().iter().cloned());
     }
 
     // 包括起始状态
-    res_ref.extend((*states_set_ref).borrow().clone());
+    res_ref.extend((*states_set_ref).borrow().iter().cloned());
 
     res
 }

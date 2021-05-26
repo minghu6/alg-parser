@@ -10,8 +10,8 @@ dependencies = [
  "cute",
  "indexmap",
  "itertools",
- "key-set",
  "lazy_static",
+ "m6-key-set",
  "maplit",
  "num",
  "paste",
@@ -71,17 +71,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "key-set"
-version = "0.1.0"
-dependencies = [
- "indexmap",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
+name = "m6-key-set"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "775849049ee4bc286400440f1f540d1a6c8c352eff3d9cafe70b3d5284304ebc"
+dependencies = [
+ "indexmap",
+]
 
 [[package]]
 name = "maplit"
