@@ -1767,6 +1767,18 @@ impl TransData<LR1Closure, GramSym, GramSym> for GramSym {
     }
 }
 
+
+/*
+* LR(1) Item abbreviation, 就是把原来包含相同LR(0) Item但是只是lookahead不同的合并
+* 这样lookahead就由原来的FollSetSym变为Set<FollSetSym>
+*
+* 这很简单也没什么意思, 就不另外实现了, LR(1) 和 LR(0)的重复代码已经够多了.
+*
+*/
+
+
+
+
 #[cfg(test)]
 #[allow(non_snake_case)]
 #[allow(unused_imports)]
