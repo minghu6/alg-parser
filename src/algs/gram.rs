@@ -1778,7 +1778,6 @@ impl TransData<LR1Closure, GramSym, GramSym> for GramSym {
 
 
 
-
 #[cfg(test)]
 #[allow(non_snake_case)]
 #[allow(unused_imports)]

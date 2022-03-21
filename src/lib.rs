@@ -1,4 +1,3 @@
-#![feature(min_type_alias_impl_trait)]
 #![feature(destructuring_assignment)]
 #![feature(generators, generator_trait)]
 #![feature(in_band_lifetimes)]
@@ -8,6 +7,7 @@
 #![feature(extend_one)]
 #![feature(associated_type_bounds)]
 #![feature(trait_alias)]
+#![feature(type_alias_impl_trait)]
 
 #![allow(mixed_script_confusables)]
 

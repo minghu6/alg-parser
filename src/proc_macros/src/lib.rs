@@ -50,7 +50,6 @@ pub fn make_vec_macro_rules(input: TokenStream) -> TokenStream {
             ( $($value:expr),* ) => {
                 {
                     let mut vec_like = #path::new();
-
                     $(
                         vec_like.#inc_op($value);
                     )*
