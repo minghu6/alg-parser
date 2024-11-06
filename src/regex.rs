@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::{ VecDeque}, fmt, hash::{Hash}, iter::IntoIterator, rc::{Rc}, vec::IntoIter};
+use std::{
+    cell::RefCell, collections::VecDeque, fmt, hash::Hash, iter::IntoIterator, rc::Rc,
+    vec::IntoIter,
+};
 
 use itertools::Itertools;
 
@@ -68,7 +71,6 @@ impl CharSet {
     }
 
     pub fn insert_scope(&mut self, char_scope: (char, char)) {
-
         self.char_scopes.push(char_scope); // push return ()
         self.compress(); // 每次都压缩可能不太合适
     }
@@ -475,11 +477,11 @@ macro_rules! simple_regex {
 ////////////////////////////////////////////////////////////////////////////////
 //// Converter
 
-pub fn regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char, char> {
+pub fn regex2nfa(counter: &mut dyn CounterType, node: &RegexNode) -> StateGraph<char, char, char> {
     _regex2nfa(counter, node)
 }
 
-fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, char, char> {
+fn _regex2nfa(counter: &mut dyn CounterType, node: &RegexNode) -> StateGraph<char, char, char> {
     let mut states_vec = vec![];
     let (mut begin_state, mut end_state);
 
@@ -614,7 +616,6 @@ fn _regex2nfa(counter: &mut CounterType, node: &RegexNode) -> StateGraph<char, c
 ////////////////////////////////////////////////////////////////////////////////
 /// Runner
 
-
 // Do NFA match
 pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char, char, char>, input: &str) -> bool {
     // #[cfg(debug_assertions)]
@@ -625,7 +626,7 @@ pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char, char, char>, input: &str
 
     matched = match match_with_nfa(nfa_g, &chars_input[..]) {
         MatchResult::FullMatched => true,
-        _ => false
+        _ => false,
     };
 
     // #[cfg(debug_assertions)]
@@ -633,8 +634,6 @@ pub fn str_full_match_with_nfa(nfa_g: &StateGraph<char, char, char>, input: &str
 
     matched
 }
-
-
 
 /// Do DFA match
 pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char, char, char>, input: &str) -> bool {
@@ -648,7 +647,7 @@ pub fn str_full_match_with_dfa(dfa_g: &DFAStateGraph<char, char, char>, input: &
 
     matched = match match_with_dfa(dfa_g, &chars_input[..]) {
         MatchResult::FullMatched => true,
-        _ => false
+        _ => false,
     };
 
     #[cfg(debug_assertions)]
@@ -1068,8 +1067,8 @@ mod test {
     #[test]
     fn nfa_dfa_match_works() {
         use super::{
-            ascii_charset, gen_counter, int_r, lparen_r, str_full_match_with_dfa, str_full_match_with_nfa, regex2nfa,
-            CharSet,
+            ascii_charset, gen_counter, int_r, lparen_r, regex2nfa, str_full_match_with_dfa,
+            str_full_match_with_nfa, CharSet,
         };
 
         let mut nfa_g = regex2nfa(&mut gen_counter(), &int_r());
@@ -1123,25 +1122,19 @@ mod test {
         assert!(!rparen_m.is_match("("));
     }
 
-
     #[test]
     fn test_strlit() {
         let nfa_g = regex2nfa(&mut gen_counter(), &strlit_r());
         println!("strlit graph: \n{}", nfa_g);
 
         // Test NFA
-        assert!(
-            str_full_match_with_nfa(&nfa_g, r#"  "abcdef"   "#.trim())
-        );
-        assert!(
-            str_full_match_with_nfa(&nfa_g, r#"  "abc\\def"   "#.trim())
-        );
-        assert!(
-            str_full_match_with_nfa(&nfa_g, r#"  "abc\\\"def"   "#.trim())
-        );
-        assert!(!
-            str_full_match_with_nfa(&nfa_g, r#"  "abc"def"   "#.trim())
-        );
+        assert!(str_full_match_with_nfa(&nfa_g, r#"  "abcdef"   "#.trim()));
+        assert!(str_full_match_with_nfa(&nfa_g, r#"  "abc\\def"   "#.trim()));
+        assert!(str_full_match_with_nfa(
+            &nfa_g,
+            r#"  "abc\\\"def"   "#.trim()
+        ));
+        assert!(!str_full_match_with_nfa(&nfa_g, r#"  "abc"def"   "#.trim()));
 
         // Test DFA
         // strlit_m
@@ -1154,9 +1147,7 @@ mod test {
         assert!(strlitm.is_match(r#"  "abc\\\"def"   "#.trim()));
 
         assert!(!strlitm.is_match(r#"  "abc"def"   "#.trim()));
-
     }
-
 
     #[test]
     fn test_some_defined_matcher() {

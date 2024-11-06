@@ -59,7 +59,7 @@ impl fmt::Display for ASTNode {
         match &self {
             Self::Tree(tree) => {
                 write!(f, "{}", tree.as_ref().borrow())?;
-            },
+            }
             Self::Leaf(token) => {
                 writeln!(f, "{}", token.as_ref())?;
             }
@@ -263,10 +263,11 @@ impl Parser for LL1Parser {
     }
 }
 
-
 impl fmt::Display for Stack<GramSym> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_empty() { return Ok(()) }
+        if self.is_empty() {
+            return Ok(());
+        }
 
         let lastpos = self.len() - 1;
         for (i, item) in self.stack_iter().enumerate() {
@@ -280,7 +281,6 @@ impl fmt::Display for Stack<GramSym> {
         Ok(())
     }
 }
-
 
 /// Result: <ASTRoot, UnsupportedTokenType>
 fn _ll1_parse(
@@ -513,7 +513,8 @@ impl SLR1Parser {
 pub type LR0DFAState = Rc<RefCell<DFAState<LR0Closure, GramSym, GramSym>>>;
 
 pub enum LROp {
-    Shift, Reduce
+    Shift,
+    Reduce,
 }
 
 impl Parser for SLR1Parser {
@@ -535,17 +536,17 @@ impl Parser for SLR1Parser {
 
         let mut reduce_stack = stack![];
 
-        let mut state_stack = stack![self.dfa_g.top().unwrap().to_owned()];
+        let mut state_stack =
+            stack![self.dfa_g.top().unwrap().to_owned()];
 
         let mut state_input = Some(token_queue.front().unwrap().to_gram_sym());
         let mut lookahead = FollSetSym::EndMarker;
 
         while !state_stack.is_empty() {
-
             let cur_state = state_stack.top().unwrap().to_owned();
             let cur_state_ref = cur_state.as_ref().borrow();
 
-            let mut lrop = LROp::Shift;  // 默认Shift
+            let mut lrop = LROp::Shift; // 默认Shift
 
             if let Some(input) = &state_input {
                 match cur_state_ref.try_next(&input) {
@@ -554,8 +555,8 @@ impl Parser for SLR1Parser {
 
                         if input.is_nonterminal() {
                             state_input = match lookahead {
-                                FollSetSym::EndMarker => None,  // just to do reduce
-                                FollSetSym::Sym(ref sym) => Some(GramSym::Terminal(sym.to_owned()))
+                                FollSetSym::EndMarker => None, // just to do reduce
+                                FollSetSym::Sym(ref sym) => Some(GramSym::Terminal(sym.to_owned())),
                             };
 
                             continue;
@@ -579,33 +580,28 @@ impl Parser for SLR1Parser {
                     debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Shift");
 
                     // Just Do Shift
-                    slr1_shift(
-                        &mut token_queue,
-                        &mut reduce_stack,
-                    );
+                    slr1_shift(&mut token_queue, &mut reduce_stack);
 
-                    state_input =
-                    match token_queue.front() {
+                    state_input = match token_queue.front() {
                         Some(token) => {
                             lookahead = token.to_foll_set_sym();
 
                             Some(token.to_gram_sym())
-                        },
+                        }
                         None => {
                             lookahead = FollSetSym::EndMarker;
 
                             None
-                        },
+                        }
                     }
-                },
+                }
                 LROp::Reduce => {
                     debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Reduce");
 
                     let cur_state = state_stack.pop().unwrap();
                     let cur_state_ref = cur_state.as_ref().borrow();
 
-                    let option_end_item
-                    = cur_state_ref
+                    let option_end_item = cur_state_ref
                         .data
                         .data()
                         .unwrap()
@@ -618,13 +614,9 @@ impl Parser for SLR1Parser {
                         .collect_vec()
                         .pop();
 
-                    state_input =
-                    if let Some(end_item) = option_end_item {
+                    state_input = if let Some(end_item) = option_end_item {
                         // Just Do Reduce
-                        slr1_reduce(
-                            &end_item.to_gram_prod(),
-                            &mut reduce_stack,
-                        );
+                        slr1_reduce(&end_item.to_gram_prod(), &mut reduce_stack);
 
                         Some(end_item.lhs_sym().to_owned())
                     } else {
@@ -658,10 +650,11 @@ impl Parser for SLR1Parser {
     }
 }
 
-
 impl fmt::Display for Stack<ASTNode> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_empty() { return Ok(()) }
+        if self.is_empty() {
+            return Ok(());
+        }
 
         let lastpos = self.len() - 1;
         for (i, item) in self.stack_iter().enumerate() {
@@ -682,21 +675,23 @@ fn debug_print_lr0(
     reduce_stack: &Stack<ASTNode>,
     state_stack: &Stack<LR0DFAState>,
     action: &str,
-)
-{
+) {
     println!("Stack:  \n{}", reduce_stack);
-    println!("Input:  {}", token_queue.iter().map(|token| token.value()).join(""));
+    println!(
+        "Input:  {}",
+        token_queue.iter().map(|token| token.value()).join("")
+    );
     println!(
         "State:  {}",
-        state_stack.queue_iter()
-        .map(|state| format!("({})", state.as_ref().borrow().id))
-        .collect_vec()
-        .join(", ")
+        state_stack
+            .queue_iter()
+            .map(|state| format!("({})", state.as_ref().borrow().id))
+            .collect_vec()
+            .join(", ")
     );
     println!("Action: {}", action);
     println!("{}", "-".repeat(80));
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// SLR(1) Parser Table version
@@ -750,7 +745,6 @@ impl Parser for SLR1vTParser {
         let mut lookahead = FollSetSym::EndMarker;
 
         while !state_stack.is_empty() {
-
             let cur_state = state_stack.top().unwrap().to_owned();
             let cur_state_ref = cur_state.as_ref().borrow();
             let pos = (cur_state_ref.id, input.clone());
@@ -758,16 +752,11 @@ impl Parser for SLR1vTParser {
             match self.pt.get(&pos).unwrap() {
                 // Shift
                 SLR1PTAct::S(to_state_id) => {
-                    state_stack.push(
-                        self.dfa_g.get_state(&to_state_id).unwrap().to_owned()
-                    );
+                    state_stack.push(self.dfa_g.get_state(&to_state_id).unwrap().to_owned());
 
                     debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Shift");
 
-                    slr1_shift(
-                        &mut token_queue,
-                        &mut reduce_stack,
-                    );
+                    slr1_shift(&mut token_queue, &mut reduce_stack);
 
                     if let Some(token) = token_queue.front() {
                         lookahead = token.to_foll_set_sym();
@@ -776,36 +765,31 @@ impl Parser for SLR1vTParser {
                     }
 
                     input = lookahead.clone();
-                },
+                }
                 // Reduce
                 SLR1PTAct::R(prod_nth) => {
                     debug_print_lr0(&token_queue, &reduce_stack, &state_stack, "Reduce");
                     state_stack.pop();
 
                     let prod = self.gram.get_prod_index(*prod_nth).unwrap();
-                    slr1_reduce(
-                        prod,
-                        &mut reduce_stack
-                    );
+                    slr1_reduce(prod, &mut reduce_stack);
 
                     input = prod.0.to_foll_set_sym();
-                },
+                }
                 // Nonterminal Goto
                 SLR1PTAct::G(to_state_id) => {
-                    state_stack.push(
-                        self.dfa_g.get_state(&to_state_id).unwrap().to_owned()
-                    );
+                    state_stack.push(self.dfa_g.get_state(&to_state_id).unwrap().to_owned());
 
                     input = lookahead.clone();
-                },
+                }
                 SLR1PTAct::None => {
                     state_stack.pop();
-                },
+                }
                 SLR1PTAct::Accept => {
                     break;
                 }
             }
-        }  // end loop
+        } // end loop
 
         if !token_queue.is_empty() {
             return Err(format!("Tokens remains: `{:?}`", token_queue));
@@ -834,10 +818,7 @@ impl Parser for SLR1vTParser {
 
 /// Shift 应该只是一个state_input作为terminal类型的情况
 /// 而作为nonterminal的情况在invoker中另做处理
-fn slr1_shift(
-    token_queue: &mut VecDeque<Token>,
-    reduce_stack: &mut Stack<ASTNode>,
-) {
+fn slr1_shift(token_queue: &mut VecDeque<Token>, reduce_stack: &mut Stack<ASTNode>) {
     let token = token_queue.pop_front().unwrap();
 
     // Consume token and turn it into ast node
@@ -845,11 +826,7 @@ fn slr1_shift(
     reduce_stack.push(node);
 }
 
-fn slr1_reduce(
-    prod: &GramProd,
-    reduce_stack: &mut Stack<ASTNode>,
-)
-{
+fn slr1_reduce(prod: &GramProd, reduce_stack: &mut Stack<ASTNode>) {
     // Bottom Up!
 
     // reduce node to paren node
@@ -857,11 +834,13 @@ fn slr1_reduce(
     let mut paren = AST::new(lhs_sym);
 
     if let GramSymStr::Str(symstr) = &prod.1 {
-        symstr.into_iter().map(|_sym| {
-            reduce_stack.pop().unwrap()
-        }).rev().for_each(|node| {
-            paren.insert_node(node);
-        });
+        symstr
+            .into_iter()
+            .map(|_sym| reduce_stack.pop().unwrap())
+            .rev()
+            .for_each(|node| {
+                paren.insert_node(node);
+            });
     } else {
         // LR Item的 SymStr 里面不应有epsilon
         unreachable!();
@@ -871,7 +850,6 @@ fn slr1_reduce(
 
     reduce_stack.push(paren_node);
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Unit Test

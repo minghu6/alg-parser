@@ -9,20 +9,20 @@ use std::{
 };
 
 
-pub type CounterType = impl FnMut() -> usize;
+pub trait CounterType = FnMut() -> usize;
 
-pub fn gen_counter() -> CounterType {
+pub fn gen_counter() -> Box<dyn CounterType> {
     _gen_counter(0)
 }
 
-fn _gen_counter(init: usize) -> CounterType {
+fn _gen_counter(init: usize) -> Box<dyn CounterType> {
     let mut count = init;
 
-    move || {
+    Box::new(move || {
         let old_count = count;
         count += 1;
         old_count
-    }
+    })
 }
 
 #[inline]
@@ -246,7 +246,7 @@ pub struct StackIter<'a, T> {
     iter: Rev<std::slice::Iter<'a, T>>
 }
 
-impl <T> Iterator for StackIter<'a, T> {
+impl <'a, T> Iterator for StackIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -259,7 +259,7 @@ pub struct QueueIter<'a, T> {
     iter: std::slice::Iter<'a, T>
 }
 
-impl <T> Iterator for QueueIter<'a, T> {
+impl<'a, T> Iterator for QueueIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -330,7 +330,7 @@ mod test {
 
     #[test]
     fn test_but_last_n() {
-        use super::{but_last_n_str};
+        use super::but_last_n_str;
 
         assert_eq!(but_last_n_str("abc_d", -2), "abc");
         assert_eq!(but_last_n_str("abc_d", 2), "abc");

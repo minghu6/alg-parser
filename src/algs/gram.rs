@@ -1,16 +1,14 @@
-use std::{cell::RefCell, fmt, iter, rc::{Rc}};
+use std::{cell::RefCell, fmt, iter, rc::Rc};
 
-use indexmap::{indexmap, indexset, IndexSet, IndexMap};
+use indexmap::{indexmap, indexset, IndexMap, IndexSet};
 use itertools::Itertools;
 
-use crate::{stack};
+use crate::stack;
 
-use super::
-{super:: {
-        utils::{
-            gen_counter
-        }
-    }, state::{DFAState, DFAStateGraph, DFATransition, TransData, TryNxtRes}};
+use super::{
+    super::utils::gen_counter,
+    state::{DFAState, DFAStateGraph, DFATransition, TransData, TryNxtRes},
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 /////// Grammar Symbol
@@ -65,7 +63,6 @@ impl fmt::Display for GramSym {
         write!(f, "{}", sym_id)
     }
 }
-
 
 /// GramSymStr: 语法符号串
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
@@ -125,11 +122,7 @@ impl fmt::Display for GramSymStr {
 pub type GramProd = (GramSym, GramSymStr);
 
 pub fn format_gramprod(prod: &GramProd) -> String {
-    format!(
-        "{} => {}",
-        format!("{}", prod.0),
-        format!("{}", prod.1),
-    )
+    format!("{} => {}", format!("{}", prod.0), format!("{}", prod.1),)
 }
 
 /// FstSets: FirstSets 类型
@@ -242,8 +235,13 @@ pub fn display_follsets(foll_sets: &FollSets) {
     for (lhs_sym, prodset) in foll_sets.iter() {
         print!("{}: \n", lhs_sym);
 
-        print!("{}\n",
-            prodset.iter().map(|x| format!("| {}", x)).collect_vec().join("\n")
+        print!(
+            "{}\n",
+            prodset
+                .iter()
+                .map(|x| format!("| {}", x))
+                .collect_vec()
+                .join("\n")
         );
 
         println!();
@@ -254,8 +252,13 @@ pub fn display_fstsets(fst_sets: &FstSets) {
     for (lhs_sym, prodset) in fst_sets.iter() {
         print!("{}: \n", lhs_sym);
 
-        print!("{}\n",
-            prodset.iter().map(|x| format!("| {}", x)).collect_vec().join("\n")
+        print!(
+            "{}\n",
+            prodset
+                .iter()
+                .map(|x| format!("| {}", x))
+                .collect_vec()
+                .join("\n")
         );
 
         println!();
@@ -510,12 +513,12 @@ impl Gram {
     }
 
     /// 性能上可能应该需要一个Iterator Wrapper
-    pub fn find_prod(&self, lhs: &GramSym)
-    -> Vec<GramProd>
-    {
-        self.productions.iter().filter( |prod: &&GramProd| {
-            &prod.0 == lhs
-        }).cloned().collect_vec()
+    pub fn find_prod(&self, lhs: &GramSym) -> Vec<GramProd> {
+        self.productions
+            .iter()
+            .filter(|prod: &&GramProd| &prod.0 == lhs)
+            .cloned()
+            .collect_vec()
     }
 }
 
@@ -688,15 +691,12 @@ impl iter::IntoIterator for Gram {
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub struct LR0Item {
     prod: GramProd,
-    pos: usize,  // dot pos in right side gram str
+    pos: usize, // dot pos in right side gram str
 }
 
 impl LR0Item {
     pub fn from_prod(prod: GramProd) -> Self {
-        Self {
-            prod,
-            pos: 0
-        }
+        Self { prod, pos: 0 }
     }
 
     pub fn symstr(&self) -> &GramSymStr {
@@ -738,7 +738,7 @@ impl LR0Item {
     pub fn prod_len(&self) -> usize {
         match &self.prod.1 {
             GramSymStr::Str(symstr) => symstr.len(),
-            _ => 0
+            _ => 0,
         }
     }
 
@@ -775,22 +775,19 @@ impl fmt::Display for LR0Item {
     }
 }
 
-
 /// _LR0Closure
 type _LR0Closure = IndexSet<LR0Item>;
 
 /// LR0Closure
 #[derive(Clone)]
 pub struct LR0Closure {
-    _closure: Rc<RefCell<_LR0Closure>>
+    _closure: Rc<RefCell<_LR0Closure>>,
 }
 
 impl LR0Closure {
     pub fn new() -> Self {
         Self {
-            _closure: Rc::new(RefCell::new(
-                indexset! {}
-            ))
+            _closure: Rc::new(RefCell::new(indexset! {})),
         }
     }
 
@@ -803,16 +800,18 @@ impl LR0Closure {
     pub fn dot_syms(&self) -> Vec<GramSym> {
         let closure = self._closure.as_ref().borrow();
 
-        closure.iter()
-        .filter_map(|item| item.rhs_sym())
-        .cloned()
-        .collect_vec()
+        closure
+            .iter()
+            .filter_map(|item| item.rhs_sym())
+            .cloned()
+            .collect_vec()
     }
 
     pub fn dot_nonterm_syms(&self) -> Vec<GramSym> {
-        self.dot_syms().into_iter()
-        .filter(|sym| sym.is_nonterminal())
-        .collect_vec()
+        self.dot_syms()
+            .into_iter()
+            .filter(|sym| sym.is_nonterminal())
+            .collect_vec()
     }
 
     pub fn insert_item(&mut self, item: LR0Item) -> bool {
@@ -820,14 +819,22 @@ impl LR0Closure {
     }
 
     pub fn items(&self) -> Vec<LR0Item> {
-        self._closure.as_ref().borrow().iter().cloned().collect_vec()
+        self._closure
+            .as_ref()
+            .borrow()
+            .iter()
+            .cloned()
+            .collect_vec()
     }
 
     pub fn end_items(&self) -> Vec<LR0Item> {
-        self._closure.as_ref().borrow().iter()
-        .filter(|item| item.is_end())
-        .cloned()
-        .collect_vec()
+        self._closure
+            .as_ref()
+            .borrow()
+            .iter()
+            .filter(|item| item.is_end())
+            .cloned()
+            .collect_vec()
     }
 
     pub fn next_sym_closures(&self) -> Vec<(GramSym, Vec<LR0Item>)> {
@@ -845,17 +852,14 @@ impl LR0Closure {
             }
         }
 
-        sym_closures
-        .into_iter()
-        .collect_vec()
+        sym_closures.into_iter().collect_vec()
     }
 }
-
 
 impl From<_LR0Closure> for LR0Closure {
     fn from(set: _LR0Closure) -> Self {
         Self {
-            _closure: Rc::new(RefCell::new(set))
+            _closure: Rc::new(RefCell::new(set)),
         }
     }
 }
@@ -918,14 +922,18 @@ pub enum SLR1PTAct {
     Accept,
 
     /// Empty Action
-    None
+    None,
 }
 
 impl fmt::Display for SLR1PTAct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            Self::None => { write!(f, "{}", "   ") },
-            _ => { write!(f, "{:?}", self) }
+            Self::None => {
+                write!(f, "{}", "   ")
+            }
+            _ => {
+                write!(f, "{:?}", self)
+            }
         }
     }
 }
@@ -935,38 +943,36 @@ pub struct SLR1PT {
     /// 相比Array2 or Vectror2D， 考虑到action实际上只会在同一列(labeled by follsym)上跳转
     /// IndexMap可以更方便地by key和by index索引, 而不需要使用额外的{ key => index }的map做转换
     /// 一次创建可以保证每列的高度相同，唯一需要注意一下得大概就是按行打印的时候。
-    data: IndexMap<FollSetSym, IndexMap<usize, SLR1PTAct>>
+    data: IndexMap<FollSetSym, IndexMap<usize, SLR1PTAct>>,
 }
 
 impl SLR1PT {
-    pub fn new(ordered_states: &Vec<usize>, termsyms: Vec<GramSym>, nontermsyms: Vec<GramSym>) -> Self {
+    pub fn new(
+        ordered_states: &Vec<usize>,
+        termsyms: Vec<GramSym>,
+        nontermsyms: Vec<GramSym>,
+    ) -> Self {
         let mut data = indexmap! {};
 
         data.extend(
             termsyms
-            .into_iter()
-            .map(|x| x.to_foll_set_sym())
-            .chain(vec![FollSetSym::EndMarker].into_iter())
-            .chain(
-                nontermsyms
                 .into_iter()
                 .map(|x| x.to_foll_set_sym())
-            )
-            .map(|sym| {
-                let mut col = indexmap! {};
-                col.extend(
-                    ordered_states
-                        .iter()
-                        .map(|id| (id.clone(), SLR1PTAct::None))
-                );
+                .chain(vec![FollSetSym::EndMarker].into_iter())
+                .chain(nontermsyms.into_iter().map(|x| x.to_foll_set_sym()))
+                .map(|sym| {
+                    let mut col = indexmap! {};
+                    col.extend(
+                        ordered_states
+                            .iter()
+                            .map(|id| (id.clone(), SLR1PTAct::None)),
+                    );
 
-                (sym, col)
-            })
+                    (sym, col)
+                }),
         );
 
-        Self {
-            data
-        }
+        Self { data }
     }
 
     /// -> (width, height)
@@ -977,7 +983,6 @@ impl SLR1PT {
 
         (width, height)
     }
-
 
     /// (id, tokensym)
     pub fn get(&self, pos: &(usize, FollSetSym)) -> Option<&SLR1PTAct> {
@@ -1027,64 +1032,66 @@ impl SLR1PT {
     }
 }
 
-
 impl fmt::Display for SLR1PT {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cell_width = 6;
 
         // 适用于符号不超过20个 (超过的应该分部分显示，但考虑到这个打印是为了readable demo
         // 所以兼容那种情况也没有意义，就这样实现了)
-        writeln!(f, "{}", format!(
-            "   {}",
-            self.data.keys().map(|k|
-                format!("{:^cell_width$}", format!("{}", k), cell_width = cell_width)
+        writeln!(
+            f,
+            "{}",
+            format!(
+                "   {}",
+                self.data
+                    .keys()
+                    .map(|k| format!("{:^cell_width$}", format!("{}", k), cell_width = cell_width))
+                    .join(" | ")
             )
-            .join(" | ")
-        ))?;
+        )?;
 
         let (width, height) = self.size();
 
-        writeln!(f, "   {}",
-        (0..width)
-        .map(|_j| {
-            format!(
-                "{}",
-                "-".repeat(cell_width)
-            )
-        })
-        .collect_vec()
-        .join("-|-")
-        ).ok();
+        writeln!(
+            f,
+            "   {}",
+            (0..width)
+                .map(|_j| { format!("{}", "-".repeat(cell_width)) })
+                .collect_vec()
+                .join("-|-")
+        )
+        .ok();
 
         (0..height).for_each(|i| {
             write!(f, "{:<3}", i).ok();
 
-            write!(f, "{}",
+            write!(
+                f,
+                "{}",
                 (0..width)
-                .map(|j| {
-                    format!(
-                        "{:^cell_width$}",
-                        format!("{}", self.get_index((j, i)).unwrap()),
-                        cell_width = cell_width
-                    )
-                })
-                .collect_vec()
-                .join(" | ")
-            ).ok();
+                    .map(|j| {
+                        format!(
+                            "{:^cell_width$}",
+                            format!("{}", self.get_index((j, i)).unwrap()),
+                            cell_width = cell_width
+                        )
+                    })
+                    .collect_vec()
+                    .join(" | ")
+            )
+            .ok();
 
             write!(f, "\n").ok();
 
-            write!(f, "   {}",
-            (0..width)
-            .map(|_j| {
-                format!(
-                    "{}",
-                    "-".repeat(cell_width)
-                )
-            })
-            .collect_vec()
-            .join("-|-")
-            ).ok();
+            write!(
+                f,
+                "   {}",
+                (0..width)
+                    .map(|_j| { format!("{}", "-".repeat(cell_width)) })
+                    .collect_vec()
+                    .join("-|-")
+            )
+            .ok();
 
             write!(f, "\n").ok();
         });
@@ -1100,7 +1107,7 @@ pub type LR0DFA = DFAState<LR0Closure, GramSym, GramSym>;
 * Impl Gram for LR0
 */
 impl Gram {
-    pub fn lr0closure(&self, items: impl Iterator<Item=LR0Item>) -> LR0Closure {
+    pub fn lr0closure(&self, items: impl Iterator<Item = LR0Item>) -> LR0Closure {
         let mut closure = indexset! {};
 
         let mut new_item_vec = vec![];
@@ -1115,9 +1122,9 @@ impl Gram {
                     if rhs.is_nonterminal() {
                         new_item_vec.extend(
                             self.find_prod(&rhs)
-                            .into_iter()
-                            .map(|prod| LR0Item::from_prod(prod))
-                            .filter(|item| !closure.contains(item))
+                                .into_iter()
+                                .map(|prod| LR0Item::from_prod(prod))
+                                .filter(|item| !closure.contains(item)),
                         )
                     }
                 }
@@ -1131,7 +1138,7 @@ impl Gram {
 
     pub fn start_lr0_item(&self) -> Option<LR0Item> {
         if let Some(prod) = self.start_prod() {
-            return Some(LR0Item::from_prod(prod.clone()))
+            return Some(LR0Item::from_prod(prod.clone()));
         }
 
         None
@@ -1140,7 +1147,7 @@ impl Gram {
     pub fn start_lr0_item_closure(&self) -> Option<LR0Closure> {
         if let Some(start_item) = self.start_lr0_item() {
             let start_set = vec![start_item];
-            return Some(self.lr0closure(start_set.into_iter()))
+            return Some(self.lr0closure(start_set.into_iter()));
         }
 
         None
@@ -1152,59 +1159,60 @@ impl Gram {
     ///     有且只有一个LR(0)-Item
     pub fn lr0_dfa(&self) -> DFAStateGraph<LR0Closure, GramSym, GramSym> {
         if self.productions.is_empty() {
-            return DFAStateGraph::empty()
+            return DFAStateGraph::empty();
         }
 
         let start_closure = self.start_lr0_item_closure().unwrap();
         let mut counter = gen_counter();
         let start_state = Rc::new(RefCell::new(
             DFAState::<LR0Closure, GramSym, GramSym>::from_counter_data(
-                &mut counter, start_closure
-            )
+                &mut counter,
+                start_closure,
+            ),
         ));
 
-        let mut state_coll
-        = indexmap!{
+        let mut state_coll = indexmap! {
             start_state.as_ref().borrow().id.clone() => start_state.clone()
         };
-        let mut state_stack
-        = stack![start_state];
+        let mut state_stack = stack![start_state];
 
         while let Some(cur_state) = state_stack.pop() {
             let state_rc = cur_state.as_ref().borrow();
             let state_closure = state_rc.data.data().unwrap().to_owned();
             drop(state_rc);
 
-            for (sym, items_vec)
-            in state_closure.next_sym_closures().into_iter() {
+            for (sym, items_vec) in state_closure.next_sym_closures().into_iter() {
                 let closure = self.lr0closure(items_vec.into_iter());
                 let found_state;
 
-                if let Some(state)
-                = state_coll.values().find(|state: &&Rc<RefCell<DFAState<LR0Closure, GramSym, GramSym>>>| {
-                    state.as_ref().borrow().data.data().unwrap() == &closure
-                }) {
+                if let Some(state) = state_coll.values().find(
+                    |state: &&Rc<RefCell<DFAState<LR0Closure, GramSym, GramSym>>>| {
+                        state.as_ref().borrow().data.data().unwrap() == &closure
+                    },
+                ) {
                     found_state = state.to_owned();
                 } else {
                     found_state = Rc::new(RefCell::new(
                         DFAState::<LR0Closure, GramSym, GramSym>::from_counter_data(
-                            &mut counter, closure
-                        )
+                            &mut counter,
+                            closure,
+                        ),
                     ));
 
                     state_stack.push(found_state.clone());
                     state_coll.insert(
-                        found_state.as_ref().borrow().id.clone() ,
-                        found_state.clone()
+                        found_state.as_ref().borrow().id.clone(),
+                        found_state.clone(),
                     );
                 }
 
-                cur_state.as_ref().borrow_mut().insert_transition(
-                    DFATransition::new(
+                cur_state
+                    .as_ref()
+                    .borrow_mut()
+                    .insert_transition(DFATransition::new(
                         Rc::new(RefCell::new(sym)),
-                        Rc::downgrade(&found_state)
-                    )
-                );
+                        Rc::downgrade(&found_state),
+                    ));
             }
         }
 
@@ -1212,16 +1220,13 @@ impl Gram {
     }
 
     pub fn slr0_pt(&self, dfa_g: &LR0DFAG, follow_sets: &FollSets) -> SLR1PT {
-        let states= dfa_g.ordered_states();
-        let state_ids = states.iter()
-        .map(|s| s.as_ref().borrow().id.clone())
-        .collect_vec();
+        let states = dfa_g.ordered_states();
+        let state_ids = states
+            .iter()
+            .map(|s| s.as_ref().borrow().id.clone())
+            .collect_vec();
 
-        let mut pt = SLR1PT::new(
-            &state_ids,
-            self.term_syms(),
-            self.nonterm_syms()
-        );
+        let mut pt = SLR1PT::new(&state_ids, self.term_syms(), self.nonterm_syms());
 
         // Install Accept
         *pt.get_mut(&(0, FollSetSym::EndMarker)).unwrap() = SLR1PTAct::Accept;
@@ -1231,19 +1236,16 @@ impl Gram {
         // the table contains shift n if there is a transition from state q to state n
         // that is labeled by token t.
         // token t: terminal sym t
-        self.term_syms()
-        .into_iter()
-        .for_each(|sym| {  // for each t
-            states
-            .iter()
-            .for_each(|state| {  // for each state q
-                if let TryNxtRes::Ok(to_state)
-                = state.as_ref().borrow().try_next(&sym) {
+        self.term_syms().into_iter().for_each(|sym| {
+            // for each t
+            states.iter().for_each(|state| {
+                // for each state q
+                if let TryNxtRes::Ok(to_state) = state.as_ref().borrow().try_next(&sym) {
                     let this_state_id = state.as_ref().borrow().id;
                     let to_state_id = to_state.as_ref().borrow().id;
 
-                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap()
-                    = SLR1PTAct::S(to_state_id)
+                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap() =
+                        SLR1PTAct::S(to_state_id)
                 }
             })
         });
@@ -1254,52 +1256,51 @@ impl Gram {
         //  b) production N → α is the nth production, and
         //  c) t is in FOLLOW(N).
         self.term_syms()
-        .into_iter()
-        .map(|sym| sym.to_foll_set_sym())
-        .chain(vec![FollSetSym::EndMarker].into_iter())
-        .for_each(|sym| {  // for each t
-            states
-            .iter()
-            .for_each(|state| {  // for each state q
-                let mut end_items = state.as_ref().borrow().data.data().unwrap().end_items();
+            .into_iter()
+            .map(|sym| sym.to_foll_set_sym())
+            .chain(vec![FollSetSym::EndMarker].into_iter())
+            .for_each(|sym| {
+                // for each t
+                states.iter().for_each(|state| {
+                    // for each state q
+                    let mut end_items = state.as_ref().borrow().data.data().unwrap().end_items();
 
-                if let Some(end_item) = end_items.pop() {
-                    if follow_sets.get(end_item.lhs_sym()).unwrap().contains(&sym) {
-                        let this_state_id = state.as_ref().borrow().id;
+                    if let Some(end_item) = end_items.pop() {
+                        if follow_sets.get(end_item.lhs_sym()).unwrap().contains(&sym) {
+                            let this_state_id = state.as_ref().borrow().id;
 
-                        let prod = end_item.to_gram_prod();
-                        let (prod_ind, _value) = self.productions.get_full(&prod).unwrap();
+                            let prod = end_item.to_gram_prod();
+                            let (prod_ind, _value) = self.productions.get_full(&prod).unwrap();
 
-                        let ptcell
-                        = pt.get_mut(&(this_state_id, sym.clone())).unwrap();
+                            let ptcell = pt.get_mut(&(this_state_id, sym.clone())).unwrap();
 
-                        if let SLR1PTAct::None = *ptcell {
-                            *ptcell = SLR1PTAct::R(prod_ind);
-                        } else {
-                            eprintln!("\nConflics({}, {}): {}/{}\n",
-                            this_state_id, sym,
-                            *ptcell, SLR1PTAct::R(prod_ind)
-                            );
+                            if let SLR1PTAct::None = *ptcell {
+                                *ptcell = SLR1PTAct::R(prod_ind);
+                            } else {
+                                eprintln!(
+                                    "\nConflics({}, {}): {}/{}\n",
+                                    this_state_id,
+                                    sym,
+                                    *ptcell,
+                                    SLR1PTAct::R(prod_ind)
+                                );
+                            }
                         }
                     }
-                }
+                });
             });
-        });
 
         // Install Nonterminal Goto
-        self.nonterm_syms()
-        .into_iter()
-        .for_each(|sym| {  // for each t
-            states
-            .iter()
-            .for_each(|state| {  // for each state q
-                if let TryNxtRes::Ok(to_state)
-                = state.as_ref().borrow().try_next(&sym) {
+        self.nonterm_syms().into_iter().for_each(|sym| {
+            // for each t
+            states.iter().for_each(|state| {
+                // for each state q
+                if let TryNxtRes::Ok(to_state) = state.as_ref().borrow().try_next(&sym) {
                     let this_state_id = state.as_ref().borrow().id;
                     let to_state_id = to_state.as_ref().borrow().id;
 
-                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap()
-                    = SLR1PTAct::G(to_state_id)
+                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap() =
+                        SLR1PTAct::G(to_state_id)
                 }
             })
         });
@@ -1308,25 +1309,19 @@ impl Gram {
     }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 /////// LR(1) FSM && LALR(1)
-
 
 /// LR1Item: LR(1) Item
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub struct LR1Item {
     item: LR0Item,
-    lookahead: FollSetSym  // terminal
+    lookahead: FollSetSym, // terminal
 }
-
 
 impl LR1Item {
     pub fn from_lr0item_tokensym(item: LR0Item, lookahead: FollSetSym) -> Self {
-        Self {
-            item,
-            lookahead
-        }
+        Self { item, lookahead }
     }
 
     pub fn symstr(&self) -> &GramSymStr {
@@ -1344,7 +1339,7 @@ impl LR1Item {
     pub fn inc(&self) -> Self {
         Self {
             item: self.item.inc(),
-            lookahead: self.lookahead.clone()
+            lookahead: self.lookahead.clone(),
         }
     }
 
@@ -1390,22 +1385,19 @@ impl fmt::Display for LR1Item {
     }
 }
 
-
 /// _LR1Closure
 type _LR1Closure = IndexSet<LR1Item>;
 
 /// LR1Closure
 #[derive(Clone)]
 pub struct LR1Closure {
-    _closure: Rc<RefCell<_LR1Closure>>
+    _closure: Rc<RefCell<_LR1Closure>>,
 }
 
 impl LR1Closure {
     pub fn new() -> Self {
         Self {
-            _closure: Rc::new(RefCell::new(
-                indexset! {}
-            ))
+            _closure: Rc::new(RefCell::new(indexset! {})),
         }
     }
 
@@ -1418,16 +1410,18 @@ impl LR1Closure {
     pub fn dot_syms(&self) -> Vec<GramSym> {
         let closure = self._closure.as_ref().borrow();
 
-        closure.iter()
-        .filter_map(|item| item.rhs_sym())
-        .cloned()
-        .collect_vec()
+        closure
+            .iter()
+            .filter_map(|item| item.rhs_sym())
+            .cloned()
+            .collect_vec()
     }
 
     pub fn dot_nonterm_syms(&self) -> Vec<GramSym> {
-        self.dot_syms().into_iter()
-        .filter(|sym| sym.is_nonterminal())
-        .collect_vec()
+        self.dot_syms()
+            .into_iter()
+            .filter(|sym| sym.is_nonterminal())
+            .collect_vec()
     }
 
     pub fn insert_item(&mut self, item: LR1Item) -> bool {
@@ -1435,14 +1429,22 @@ impl LR1Closure {
     }
 
     pub fn items(&self) -> Vec<LR1Item> {
-        self._closure.as_ref().borrow().iter().cloned().collect_vec()
+        self._closure
+            .as_ref()
+            .borrow()
+            .iter()
+            .cloned()
+            .collect_vec()
     }
 
     pub fn end_items(&self) -> Vec<LR1Item> {
-        self._closure.as_ref().borrow().iter()
-        .filter(|item| item.is_end())
-        .cloned()
-        .collect_vec()
+        self._closure
+            .as_ref()
+            .borrow()
+            .iter()
+            .filter(|item| item.is_end())
+            .cloned()
+            .collect_vec()
     }
 
     pub fn next_sym_closures(&self) -> Vec<(GramSym, Vec<LR1Item>)> {
@@ -1460,17 +1462,14 @@ impl LR1Closure {
             }
         }
 
-        sym_closures
-        .into_iter()
-        .collect_vec()
+        sym_closures.into_iter().collect_vec()
     }
 }
-
 
 impl From<_LR1Closure> for LR1Closure {
     fn from(set: _LR1Closure) -> Self {
         Self {
-            _closure: Rc::new(RefCell::new(set))
+            _closure: Rc::new(RefCell::new(set)),
         }
     }
 }
@@ -1497,10 +1496,9 @@ impl PartialEq for LR1Closure {
 impl Gram {
     pub fn lr1closure(
         &self,
-        items: impl Iterator<Item=LR1Item>,
-        first_sets: &FstSets
-    ) -> LR1Closure
-    {
+        items: impl Iterator<Item = LR1Item>,
+        first_sets: &FstSets,
+    ) -> LR1Closure {
         let mut closure = indexset! {};
 
         let mut new_item_vec = vec![];
@@ -1519,40 +1517,27 @@ impl Gram {
 
                     if let Some(nxt_rhs_sym) = closure_item.next_rhs_sym() {
                         self.term_syms()
-                        .into_iter()
-                        .filter(|tokensym| {
-                            let fstset
-                            = first_sets
-                            .get(&nxt_rhs_sym)
-                            .unwrap();
+                            .into_iter()
+                            .filter(|tokensym| {
+                                let fstset = first_sets.get(&nxt_rhs_sym).unwrap();
 
-                            fstset.contains(&tokensym.to_fst_set_sym())
-
-                        })
-                        .for_each(|tokensym| {
-                            new_item_vec.extend(
-                                self.find_prod(rhs)
-                                .into_iter()
-                                .map(|prod|
+                                fstset.contains(&tokensym.to_fst_set_sym())
+                            })
+                            .for_each(|tokensym| {
+                                new_item_vec.extend(self.find_prod(rhs).into_iter().map(|prod| {
                                     LR1Item::from_lr0item_tokensym(
                                         LR0Item::from_prod(prod),
-                                        tokensym.to_foll_set_sym()
+                                        tokensym.to_foll_set_sym(),
                                     )
-                                )
-                            )
-                        })
+                                }))
+                            })
                     } else {
-                        new_item_vec.extend(
-                            self.find_prod(rhs)
-                            .into_iter()
-                            .map(|prod|
-
-                                LR1Item::from_lr0item_tokensym(
-                                    LR0Item::from_prod(prod),
-                                    closure_item.lookahead.clone()
-                                )
+                        new_item_vec.extend(self.find_prod(rhs).into_iter().map(|prod| {
+                            LR1Item::from_lr0item_tokensym(
+                                LR0Item::from_prod(prod),
+                                closure_item.lookahead.clone(),
                             )
-                        )
+                        }))
                     }
                 }
 
@@ -1565,12 +1550,10 @@ impl Gram {
 
     pub fn start_lr1_item(&self) -> Option<LR1Item> {
         if let Some(prod) = self.start_prod() {
-            Some(
-                LR1Item::from_lr0item_tokensym(
-                    LR0Item::from_prod(prod.clone()),
-                    FollSetSym::EndMarker
-                )
-            )
+            Some(LR1Item::from_lr0item_tokensym(
+                LR0Item::from_prod(prod.clone()),
+                FollSetSym::EndMarker,
+            ))
         } else {
             None
         }
@@ -1578,12 +1561,7 @@ impl Gram {
 
     pub fn start_lr1_item_closure(&self, first_sets: &FstSets) -> Option<LR1Closure> {
         if let Some(start_item) = self.start_lr1_item() {
-            return Some(
-                self.lr1closure(
-                    vec![start_item].into_iter(),
-                     first_sets
-                    )
-                )
+            return Some(self.lr1closure(vec![start_item].into_iter(), first_sets));
         }
 
         None
@@ -1592,59 +1570,56 @@ impl Gram {
     /// used for LALR(1) parser (Look Ahead LR(1))
     pub fn lr1_dfa(&self, first_sets: &FstSets) -> LR1DFAG {
         if self.productions.is_empty() {
-            return LR1DFAG::empty()
+            return LR1DFAG::empty();
         }
 
         let start_closure = self.start_lr1_item_closure(first_sets).unwrap();
         let mut counter = gen_counter();
-        let start_state = Rc::new(RefCell::new(
-            LR1DFA::from_counter_data(
-                &mut counter, start_closure
-            )
-        ));
+        let start_state = Rc::new(RefCell::new(LR1DFA::from_counter_data(
+            &mut counter,
+            start_closure,
+        )));
 
-        let mut state_coll
-        = indexmap!{
+        let mut state_coll = indexmap! {
             start_state.as_ref().borrow().id.clone() => start_state.clone()
         };
-        let mut state_stack
-        = stack![start_state];
+        let mut state_stack = stack![start_state];
 
         while let Some(cur_state) = state_stack.pop() {
             let state_rc = cur_state.as_ref().borrow();
             let state_closure = state_rc.data.data().unwrap().to_owned();
             drop(state_rc);
 
-            for (sym, items_vec)
-            in state_closure.next_sym_closures().into_iter() {
+            for (sym, items_vec) in state_closure.next_sym_closures().into_iter() {
                 let closure = self.lr1closure(items_vec.into_iter(), first_sets);
                 let found_state;
 
-                if let Some(state)
-                = state_coll.values().find(|state: &&Rc<RefCell<DFAState<LR1Closure, GramSym, GramSym>>>| {
-                    state.as_ref().borrow().data.data().unwrap() == &closure
-                }) {
+                if let Some(state) = state_coll.values().find(
+                    |state: &&Rc<RefCell<DFAState<LR1Closure, GramSym, GramSym>>>| {
+                        state.as_ref().borrow().data.data().unwrap() == &closure
+                    },
+                ) {
                     found_state = state.to_owned();
                 } else {
-                    found_state = Rc::new(RefCell::new(
-                        LR1DFA::from_counter_data(
-                            &mut counter, closure
-                        )
-                    ));
+                    found_state = Rc::new(RefCell::new(LR1DFA::from_counter_data(
+                        &mut counter,
+                        closure,
+                    )));
 
                     state_stack.push(found_state.clone());
                     state_coll.insert(
-                        found_state.as_ref().borrow().id.clone() ,
-                        found_state.clone()
+                        found_state.as_ref().borrow().id.clone(),
+                        found_state.clone(),
                     );
                 }
 
-                cur_state.as_ref().borrow_mut().insert_transition(
-                    DFATransition::new(
+                cur_state
+                    .as_ref()
+                    .borrow_mut()
+                    .insert_transition(DFATransition::new(
                         Rc::new(RefCell::new(sym)),
-                        Rc::downgrade(&found_state)
-                    )
-                );
+                        Rc::downgrade(&found_state),
+                    ));
             }
         }
 
@@ -1653,15 +1628,12 @@ impl Gram {
 
     pub fn slr1_pt(&self, dfa_g: &LR1DFAG) -> SLR1PT {
         let states = dfa_g.ordered_states();
-        let state_ids = states.iter()
-        .map(|s| s.as_ref().borrow().id.clone())
-        .collect_vec();
+        let state_ids = states
+            .iter()
+            .map(|s| s.as_ref().borrow().id.clone())
+            .collect_vec();
 
-        let mut pt = SLR1PT::new(
-            &state_ids,
-            self.term_syms(),
-            self.nonterm_syms()
-        );
+        let mut pt = SLR1PT::new(&state_ids, self.term_syms(), self.nonterm_syms());
 
         // Install Accept
         *pt.get_mut(&(0, FollSetSym::EndMarker)).unwrap() = SLR1PTAct::Accept;
@@ -1671,19 +1643,16 @@ impl Gram {
         // the table contains shift n if there is a transition from state q to state n
         // that is labeled by token t.
         // token t: terminal sym t
-        self.term_syms()
-        .into_iter()
-        .for_each(|sym| {  // for each t
-            states
-            .iter()
-            .for_each(|state| {  // for each state q
-                if let TryNxtRes::Ok(to_state)
-                = state.as_ref().borrow().try_next(&sym) {
+        self.term_syms().into_iter().for_each(|sym| {
+            // for each t
+            states.iter().for_each(|state| {
+                // for each state q
+                if let TryNxtRes::Ok(to_state) = state.as_ref().borrow().try_next(&sym) {
                     let this_state_id = state.as_ref().borrow().id;
                     let to_state_id = to_state.as_ref().borrow().id;
 
-                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap()
-                    = SLR1PTAct::S(to_state_id)
+                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap() =
+                        SLR1PTAct::S(to_state_id)
                 }
             })
         });
@@ -1694,53 +1663,51 @@ impl Gram {
         //  b) production N → α is the nth production, and
         //  c) t is in FOLLOW(N).
         self.term_syms()
-        .into_iter()
-        .map(|sym| sym.to_foll_set_sym())
-        .chain(vec![FollSetSym::EndMarker].into_iter())
-        .for_each(|sym| {  // for each t
-            states
-            .iter()
-            .for_each(|state| {  // for each state q
-                let mut end_items = state.as_ref().borrow().data.data().unwrap().end_items();
+            .into_iter()
+            .map(|sym| sym.to_foll_set_sym())
+            .chain(vec![FollSetSym::EndMarker].into_iter())
+            .for_each(|sym| {
+                // for each t
+                states.iter().for_each(|state| {
+                    // for each state q
+                    let mut end_items = state.as_ref().borrow().data.data().unwrap().end_items();
 
-                if let Some(end_item) = end_items.pop() {
-                    if sym == end_item.lookahead {
-                        let this_state_id = state.as_ref().borrow().id;
+                    if let Some(end_item) = end_items.pop() {
+                        if sym == end_item.lookahead {
+                            let this_state_id = state.as_ref().borrow().id;
 
-                        let prod = end_item.to_gram_prod();
-                        let (prod_ind, _value) = self.productions.get_full(&prod).unwrap();
+                            let prod = end_item.to_gram_prod();
+                            let (prod_ind, _value) = self.productions.get_full(&prod).unwrap();
 
-                        let ptcell
-                        = pt.get_mut(&(this_state_id, sym.clone())).unwrap();
+                            let ptcell = pt.get_mut(&(this_state_id, sym.clone())).unwrap();
 
-                        if let SLR1PTAct::None = *ptcell {
-                            *ptcell = SLR1PTAct::R(prod_ind);
-                        } else {
-
-                            eprintln!("\nConflics({}, {}): {}/{}\n",
-                            this_state_id, sym,
-                            *ptcell, SLR1PTAct::R(prod_ind)
-                            );
+                            if let SLR1PTAct::None = *ptcell {
+                                *ptcell = SLR1PTAct::R(prod_ind);
+                            } else {
+                                eprintln!(
+                                    "\nConflics({}, {}): {}/{}\n",
+                                    this_state_id,
+                                    sym,
+                                    *ptcell,
+                                    SLR1PTAct::R(prod_ind)
+                                );
+                            }
                         }
                     }
-                }
+                });
             });
-        });
 
         // Install Nonterminal Goto
-        self.nonterm_syms()
-        .into_iter()
-        .for_each(|sym| {  // for each t
-            states
-            .iter()
-            .for_each(|state| {  // for each state q
-                if let TryNxtRes::Ok(to_state)
-                = state.as_ref().borrow().try_next(&sym) {
+        self.nonterm_syms().into_iter().for_each(|sym| {
+            // for each t
+            states.iter().for_each(|state| {
+                // for each state q
+                if let TryNxtRes::Ok(to_state) = state.as_ref().borrow().try_next(&sym) {
                     let this_state_id = state.as_ref().borrow().id;
                     let to_state_id = to_state.as_ref().borrow().id;
 
-                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap()
-                    = SLR1PTAct::G(to_state_id)
+                    *pt.get_mut(&(this_state_id, sym.to_foll_set_sym())).unwrap() =
+                        SLR1PTAct::G(to_state_id)
                 }
             })
         });
@@ -1748,7 +1715,6 @@ impl Gram {
         pt
     }
 }
-
 
 pub type LR1DFAG = DFAStateGraph<LR1Closure, GramSym, GramSym>;
 pub type LR1DFA = DFAState<LR1Closure, GramSym, GramSym>;
@@ -1767,7 +1733,6 @@ impl TransData<LR1Closure, GramSym, GramSym> for GramSym {
     }
 }
 
-
 /*
 * LR(1) Item abbreviation, 就是把原来包含相同LR(0) Item但是只是lookahead不同的合并
 * 这样lookahead就由原来的FollSetSym变为Set<FollSetSym>
@@ -1776,12 +1741,7 @@ impl TransData<LR1Closure, GramSym, GramSym> for GramSym {
 *
 */
 
-
-
 #[cfg(test)]
-#[allow(non_snake_case)]
-#[allow(unused_imports)]
-#[allow(unused_variables)]
 mod test {
     use super::*;
     use crate::*;
@@ -1976,12 +1936,6 @@ mod test {
 
     #[test]
     fn test_lr0() {
-        use crate::parser::{
-            Parser,
-            SLR1Parser,
-            SLR1vTParser
-        };
-
         declare_nonterminal! {E, E1, T, F};
         declare_terminal! {
             -: lexer :-
@@ -2038,12 +1992,6 @@ mod test {
 
     #[test]
     fn lr_handle_conflics() {
-        use crate::parser::{
-            Parser,
-            SLR1Parser,
-            SLR1vTParser
-        };
-
         declare_nonterminal! {S, A, B, D};
         declare_terminal! {
             -: lexer :-
@@ -2088,17 +2036,10 @@ mod test {
         println!("LR(1) Parsing Table:");
         let lr1pt = gram.slr1_pt(&lr1dfa);
         println!("{}", lr1pt);
-
     }
 
     #[test]
     fn check_lr0_ambiguous_grammar() {
-        use crate::parser::{
-            Parser,
-            SLR1Parser,
-            SLR1vTParser
-        };
-
         declare_nonterminal! {E};
         declare_terminal! {
             -: lexer :-
@@ -2127,12 +2068,6 @@ mod test {
 
     #[test]
     fn test_lalr1_0() {
-        use crate::parser::{
-            Parser,
-            SLR1Parser,
-            SLR1vTParser
-        };
-
         declare_nonterminal! {S1, S, C};
         declare_terminal! {
             c, d
@@ -2167,12 +2102,6 @@ mod test {
 
     #[test]
     fn test_lalr1_1() {
-        use crate::parser::{
-            Parser,
-            SLR1Parser,
-            SLR1vTParser
-        };
-
         declare_nonterminal! {S1, S, L, R};
         declare_terminal! {
             -: lexer :-
@@ -2196,10 +2125,6 @@ mod test {
         |];
 
         let lr0dfa = gram.lr0_dfa();
-        println!("{}", lr0dfa);
-
-        let first_sets = gram.first_sets();
-        // display_fstsets(&first_sets);
         println!("{}", lr0dfa);
 
         let first_sets = gram.first_sets();

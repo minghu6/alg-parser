@@ -1,16 +1,14 @@
 #![allow(non_snake_case)]
+#![allow(mixed_script_confusables)]
 #![allow(unused_variables)]
+#![feature(concat_idents)]
 
-use std::{cell::RefCell, collections::VecDeque, rc::Rc, str::FromStr};
-
-use num::{BigInt, BigRational};
-
-use super::algs::{
-    gram::*,
+use std::{
+    cell::RefCell, collections::VecDeque, rc::Rc, str::FromStr,
 };
-use super::lexer::*;
-use super::parser::*;
-use super::*; // require macro
+
+use alg_parser::{algs::gram::*, lexer::*, parser::*, *};
+use num::{BigInt, BigRational};
 
 /// 一个简单四则运算的语法，为了支持LL(1)的文法，消除了左递归
 /// ```antlr
@@ -37,7 +35,8 @@ use super::*; // require macro
 ///   | ε;
 /// ```
 ///
-pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) {
+pub fn demo_grammar_ll_algb_sum(
+) -> (impl Parser, impl Evaluator<BigRational>) {
     declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
     declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
     use_epsilon!(ε);
@@ -94,7 +93,10 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
     pub struct AlgSumEval {}
 
     impl Evaluator<BigRational> for AlgSumEval {
-        fn eval(&self, ast: &Rc<RefCell<AST>>) -> Result<BigRational, String> {
+        fn eval(
+            &self,
+            ast: &Rc<RefCell<AST>>,
+        ) -> Result<BigRational, String> {
             Ok(eval_sum(ast))
         }
     }
@@ -115,7 +117,10 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
         }
 
         if let Some(addend_node) = root_ref.get_elem(&addend) {
-            for (sym, ratio) in eval_addend(&addend_node.get_ast().unwrap()).into_iter() {
+            for (sym, ratio) in
+                eval_addend(&addend_node.get_ast().unwrap())
+                    .into_iter()
+            {
                 if sym == add {
                     prod_value += ratio
                 } else {
@@ -138,8 +143,10 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
         let pri_node = root_ref.get_elem(&pri).unwrap();
         let pri_value = eval_pri(&pri_node.get_ast().unwrap());
 
-        if let Some(multiplier_node) = root_ref.get_elem(&multiplier) {
-            let multiplier_deq = eval_multiplier(&multiplier_node.get_ast().unwrap());
+        if let Some(multiplier_node) = root_ref.get_elem(&multiplier)
+        {
+            let multiplier_deq =
+                eval_multiplier(&multiplier_node.get_ast().unwrap());
 
             let mut acc = pri_value;
             for (sym, ratio) in multiplier_deq.into_iter() {
@@ -167,7 +174,9 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
         let root_ref = root.as_ref().borrow();
 
         if let Some(int_leaf) = root_ref.get_elem(&intlit) {
-            return str2bf(int_leaf.get_token().unwrap().as_ref().value());
+            return str2bf(
+                int_leaf.get_token().unwrap().as_ref().value(),
+            );
         } else if let Some(sum_node) = root_ref.get_elem(&sum) {
             return eval_sum(&sum_node.get_ast().unwrap());
         } else {
@@ -179,14 +188,17 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
     // multiplier:
     //   | (* | /) pri multiplier;
     //   | ε;
-    fn eval_multiplier(root: &Rc<RefCell<AST>>) -> VecDeque<(GramSym, BigRational)> {
+    fn eval_multiplier(
+        root: &Rc<RefCell<AST>>,
+    ) -> VecDeque<(GramSym, BigRational)> {
         // 将来可以在一个单独有GramSym实现的Proc Macro里面实现MIXIN，现在只能每次都引用这些符号
         declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
         declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
 
         let root_ref = root.as_ref().borrow();
 
-        let pri_node = root_ref.get_elem(&pri).unwrap().get_ast().unwrap();
+        let pri_node =
+            root_ref.get_elem(&pri).unwrap().get_ast().unwrap();
         let pri_value = eval_pri(pri_node);
 
         let op;
@@ -199,7 +211,8 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
         let mut multiplier_queue = vecdeq![(op, pri_value)];
 
         if let Some(v) = root_ref.get_elem(&multiplier) {
-            multiplier_queue.extend(eval_multiplier(v.get_ast().unwrap()));
+            multiplier_queue
+                .extend(eval_multiplier(v.get_ast().unwrap()));
         }
 
         multiplier_queue
@@ -211,7 +224,9 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
         | sub product addend;
         | ε;
     */
-    fn eval_addend(root: &Rc<RefCell<AST>>) -> VecDeque<(GramSym, BigRational)> {
+    fn eval_addend(
+        root: &Rc<RefCell<AST>>,
+    ) -> VecDeque<(GramSym, BigRational)> {
         declare_nonterminal! {expression, sum, product, addend, pri, multiplier};
         declare_terminal! {id, intlit, lparen, rparen, sub, add, mul, div};
 
@@ -229,7 +244,8 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
 
         match root_ref.get_elem(&addend) {
             Some(addend_node) => {
-                let mut acc_deq = eval_addend(addend_node.get_ast().unwrap());
+                let mut acc_deq =
+                    eval_addend(addend_node.get_ast().unwrap());
                 acc_deq.push_front((op, prod_value));
                 acc_deq
             }
@@ -243,7 +259,9 @@ pub fn demo_grammar_ll_algb_sum() -> (impl Parser, impl Evaluator<BigRational>) 
 }
 
 // An Interestiong Function export to other project
-pub fn parse_algb_ratio(strlit: &str) -> Result<BigRational, String> {
+pub fn parse_algb_ratio(
+    strlit: &str,
+) -> Result<BigRational, String> {
     let (parser, evalor) = demo_grammar_ll_algb_sum();
 
     match parser.parse(strlit) {
@@ -572,11 +590,13 @@ pub fn demo_bottom_up_parser_slr1vT() -> SLR1vTParser {
     SLR1vTParser::new("example", gram.clone(), lexer)
 }
 
+
 #[cfg(test)]
 mod test {
     use num::{BigInt, BigRational, FromPrimitive};
 
     use crate::parser::Parser;
+    use super::*;
 
     #[test]
     fn test_demo_full() {
@@ -635,9 +655,6 @@ mod test {
 
     #[test]
     fn ll_expression_parser_works() {
-        use super::parser::{Evaluator, Parser};
-        use crate::parser_demo::{demo_grammar_ll_algb_sum, parse_algb_ratio};
-
         let (parser, evalor) = demo_grammar_ll_algb_sum();
 
         match parser.parse(" (1+3 * 56) - 4/ 2 +3") {
@@ -646,7 +663,10 @@ mod test {
             Ok(ast) => {
                 println!("{}", ast.as_ref().borrow());
 
-                println!("eval result: {}", evalor.eval(&ast).unwrap());
+                println!(
+                    "eval result: {}",
+                    evalor.eval(&ast).unwrap()
+                );
             }
         }
 
@@ -659,9 +679,8 @@ mod test {
 
     #[test]
     fn slr_parser_works() {
-        use super:: {
-            demo_bottom_up_parser_slr1,
-            demo_bottom_up_parser_slr1vT
+        use super::{
+            demo_bottom_up_parser_slr1, demo_bottom_up_parser_slr1vT,
         };
 
         let parser = demo_bottom_up_parser_slr1();
@@ -685,11 +704,14 @@ mod test {
 
     #[test]
     fn test_bigint_rational_basic_op() {
-        use num::{BigInt, BigRational};
         use std::str::FromStr;
 
-        let a = BigInt::from_str("100000000000000000000000000002").unwrap();
-        let b = BigInt::from_str("20000000000000000000000000000").unwrap();
+        use num::{BigInt, BigRational};
+
+        let a = BigInt::from_str("100000000000000000000000000002")
+            .unwrap();
+        let b = BigInt::from_str("20000000000000000000000000000")
+            .unwrap();
         let c: BigRational = BigRational::new(a.clone(), b.clone());
         let d: BigRational = BigRational::new(a, BigInt::from(1));
 

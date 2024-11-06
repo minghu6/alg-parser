@@ -1,9 +1,7 @@
 #![allow(dead_code)]
 
-use crate::utils::*;
-use crate::algs::state::*;
-use crate::regex::*;
-use crate::{ charset };
+
+use alg_parser::{algs::state::*, charset, regex::*, utils::*};
 
 /// writen in verbose format
 fn demo_regex_nfa_dfa() {
