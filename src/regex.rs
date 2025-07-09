@@ -5,6 +5,7 @@ use std::{
     vec::IntoIter,
 };
 
+use cute::c;
 use itertools::Itertools;
 
 use super::algs::state::*;
@@ -1020,6 +1021,8 @@ make_matcher!(slash_block_comment_r => slash_block_comment_m | nfa);
 
 #[cfg(test)]
 mod test {
+    use maplit::hashset;
+
     use super::*;
 
     #[test]

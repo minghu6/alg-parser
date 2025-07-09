@@ -170,14 +170,14 @@ impl <T> Stack<T> {
     }
 
     /// FILO
-    pub fn stack_iter(&self) -> StackIter<T> {
+    pub fn stack_iter(&'_ self) -> StackIter<'_, T> {
         StackIter {
             iter: self._value_vec.iter().rev()
         }
     }
 
     /// FIFO
-    pub fn queue_iter(&self) -> QueueIter<T> {
+    pub fn queue_iter(&'_ self) -> QueueIter<'_, T> {
         QueueIter {
             iter: self._value_vec.iter()
         }
@@ -291,6 +291,8 @@ macro_rules! stack {
 
 #[cfg(test)]
 mod test {
+    use maplit::hashset;
+
     use crate::*;
 
     #[test]

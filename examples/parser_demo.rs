@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 #![allow(mixed_script_confusables)]
 #![allow(unused_variables)]
-#![feature(concat_idents)]
 
 use std::{
     cell::RefCell, collections::VecDeque, rc::Rc, str::FromStr,

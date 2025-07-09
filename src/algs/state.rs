@@ -11,6 +11,7 @@ use std::{
 use indexmap::{indexmap, IndexMap};
 use itertools::Itertools;
 use key_set::{KeyHashSet, KeySet};
+use maplit::hashset;
 
 use crate::utils::{gen_counter, CounterType, ObjId};
 

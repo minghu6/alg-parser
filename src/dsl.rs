@@ -27,21 +27,22 @@ macro_rules! declare_terminal {
     ( -: $lexer_name:ident :-  $($name:ident),* ) => {
         #[allow(unused)]
         use $crate::regex::*;  // export all matcher sym, workaround solution
+        use concat_idents::concat_idents;
 
         let mut matcher_vec = vec![];
         let mut comment_m_vec = vec![];
         $(
             declare_terminal!{$name};
 
-            let matcher_gen = concat_idents!($name, _m);
+            concat_idents!{ matcher_gen = $name, _m {
+                let matcher = matcher_gen();
 
-            let matcher = matcher_gen();
-
-            if stringify!($name).ends_with("comment") {
-                comment_m_vec.push(matcher);
-            } else {
-                matcher_vec.push(matcher);
-            }
+                if stringify!($name).ends_with("comment") {
+                    comment_m_vec.push(matcher);
+                } else {
+                    matcher_vec.push(matcher);
+                }
+            }};
         )+
 
         let preprocor
